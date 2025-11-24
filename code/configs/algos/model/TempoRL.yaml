@@ -1,0 +1,4 @@
+name: TempoRL
+max_repetitions: 1
+e_greedy_type: "power" # option: ['inverse', 'linear', 'power']
+power_value: 8.0 # only used when e_greedy_type is 'power'

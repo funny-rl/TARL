@@ -1,0 +1,8 @@
+
+defaults:
+  - _self_
+  - model: null
+
+name: DQN
+e_greedy_type: "power" # option: ['inverse', 'linear', 'power'] 
+power_value: 8.0 # only used when e_greedy_type is 'power'

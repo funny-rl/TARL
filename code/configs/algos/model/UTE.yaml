@@ -1,0 +1,6 @@
+name: UTE
+uncertainty_factor: 2.0
+n_heads: 10 # number of ensemble network for uncertainty estimation
+max_repetitions: 1
+e_greedy_type: "power" # option: ['inverse', 'linear', 'power'] 
+power_value: 8.0 # only used when e_greedy_type is 'power'
