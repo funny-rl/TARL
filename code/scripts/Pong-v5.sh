@@ -22,17 +22,20 @@ if [ -z "$GN" ]; then # if GN is not provided, set default
     GN="default"
 fi
 
-total_training_steps=50000
-eval_interval=1000
-hidden_dim=128
-e_greedy_type=power
-use_step_rate=true
-use_lr_decay=true
-data_type="feature"
-lr=0.001
+total_training_steps=200000
+warmup_steps=5000
+eval_interval=5000
+hidden_dim=512
+e_greedy_type=linear
+use_step_rate=false
+use_lr_decay=false
+data_type="image"
+batch_size=128
+lr=0.0005
 
 EXTRA_ARGS=()
 
+EXTRA_ARGS+=("envs=atari")
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
 fi
@@ -40,7 +43,7 @@ fi
 for SEED in 0
 do
     ARGS=(
-        "env_name=CartPole-v1"
+        "env_name=ALE/Pong-v5"
         "algos=$ALGO"
         "total_training_steps=$total_training_steps"
         "use_wandb=$USE_WANDB"
@@ -53,6 +56,8 @@ do
         "eval_interval=$eval_interval"
         "algo_args.lr=$lr"
         "algo_args.data_type=$data_type"
+        "algo_args.batch_size=$batch_size"
+        "warmup_steps=$warmup_steps"
         "${EXTRA_ARGS[@]}"
     )
     python main.py "${ARGS[@]}"

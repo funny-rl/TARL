@@ -1,15 +1,27 @@
-log_level: INFO
-
 defaults:
-  - algos/ddpg
-  - _self_
+    - _self_
+    - algos: DQN
+    - envs: null
 
-warmup_steps: 1000 # in step units
-total_training_steps: 50000 # in step units
 seed: 0
+env_name: "FreewayNoFrameskip-v4"
+warmup_steps: 1000 # in step units
+eval_episodes: 10
 eval_interval: 1000 # in step units
-eval_n_episodes: 100 
-env_name: null
+total_training_steps: 100000 # in step units
+
 use_wandb: false
-debug: false
 group_name: default
+use_step_rate: false
+use_lr_decay: false
+
+algo_args:
+  gamma: 0.99 #discount factor
+  lr: 0.001
+  batch_size: 64
+  buffer_size: 100000
+  target_update_rate: 0.005
+  e_greedy_type: power # linear | power
+  min_epsilon: 0.0
+  data_type: image # image | feature
+  hidden_dim: 128

@@ -1,0 +1,8 @@
+
+grayscale_obs: true
+grayscale_newaxis: false
+terminal_on_life_loss: true
+screen_size: 84
+scale_obs: false
+frame_skip: 2
+num_stack: 4

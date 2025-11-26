@@ -1,366 +1,216 @@
-import pdb
+
+import wandb
 import hydra
-import torch
 import numpy as np
-
-from pprint import pprint
-
 import gymnasium as gym
-import gymnasium_robotics
-from gymnasium import spaces
-gym.register_envs(gymnasium_robotics)
 
 from omegaconf import OmegaConf
 
-from utils import set_seed, state_transform, store_future_states
-from algorithms import ALGO_REGISTRY
-from algorithms.utils import BUFFER_REGISTRY    
-
-
-
-    
-
-def eval(policy, env_name, seed, eval_episodes, model_name, use_dict_state, use_step_rate):
-    if "LunarLander" in env_name:
-        eval_env = gym.make(env_name, continuous=True)
-    else:
-        eval_env = gym.make(env_name)
-    avg_reward = 0.
-    avg_steps = 0.
-    avg_decision = 0.
-    avg_mean_rep: list[float] = []
-    avg_std_rep: list[float] = []
-    is_successes: list[float] = []
-    
-    for _ in range(eval_episodes):
-        state, _ = eval_env.reset(seed = seed + 100)
-        repetition = 1
-        done = False
-        mean_rep: list[int] = []
-        is_success: list[float] = []
-
-        while not done:
-            state = state_transform(
-                state, 
-                use_dict_state, 
-                use_step_rate, 
-                eval_env._elapsed_steps / eval_env._max_episode_steps
-            )
-            action = policy.select_action(state)
-            if model_name == TEMPORL:
-                repetition = policy.select_skip(state, action)
-            avg_decision += 1
-            mean_rep.append(repetition)
-            for _ in range(repetition):
-                next_state, reward, terminated, truncated, info = eval_env.step(action)
-                done = terminated or truncated
-                avg_reward += reward
-                avg_steps += 1
-                state = next_state
-                if "is_success" in info.keys():
-                    is_success.append(info["is_success"])
-
-                if done:
-                    is_successes.append(np.mean(is_success))
-                    break
-        
-        avg_mean_rep.append(np.mean(mean_rep))
-        avg_std_rep.append(np.std(mean_rep))
-        
-    eval_env.close()
-
-    avg_reward /= eval_episodes
-    avg_steps /= eval_episodes
-    avg_decision /= eval_episodes
-    avg_mean_rep = np.mean(avg_mean_rep) 
-    avg_std_rep = np.mean(avg_std_rep) 
-    
-   
-    log_dict = {
-            "eval_epi_reward_mean": avg_reward,
-            "eval_epi_length_mean": avg_steps,
-            "eval_avg_decision": avg_decision,
-            "eval_mean_repetition": avg_mean_rep,
-            "eval_std_repetition": avg_std_rep,
-    }
-    
-    if len(is_successes) > 0:
-       log_dict["eval_success_rate"] = np.mean(is_successes)
-
-    return log_dict
-
+from typing import Any
+from algos import ALGO_REGISTRY, MODEL_REGISTRY
+from utils import (
+    build_env, 
+    set_seed, 
+    get_model_configs, 
+    episode_stats, 
+    state_transform, 
+    to_wandb_name
+)
 
 @hydra.main(config_path="configs/", config_name="config", version_base=None)
 def main(args):
+    print("-"*20, "Experiment Configuration", "-"*20)
     print(OmegaConf.to_yaml(args))
+    print("-"*60)
     
-    env_name = args.env_name
-    algo_args = args.algos
-    model_args = algo_args.model
-    debug_mode  = args.debug
-
-    model_name = model_args.name
-    total_training_steps = args.total_training_steps
-    warmup_steps = args.warmup_steps
-    eval_n_episodes = args.eval_n_episodes
-    seed = args.seed
-    use_wandb = args.use_wandb
-    use_step_rate = algo_args.use_step_rate
-
-    env = gym.make(env_name)
-
+    env_name: str = args.env_name
+    
+    use_wandb: bool = args.use_wandb
+    use_step_rate: bool = args.use_step_rate
+    use_lr_decay: bool = args.use_lr_decay
+    
+    num_episodes: int = 0
+    seed: int = args.seed
+    training_steps: int = 0
+    warmup_steps: int = args.warmup_steps
+    eval_episodes: int = args.eval_episodes
+    eval_interval: int = args.eval_interval
+    total_training_steps: int = args.total_training_steps
+    
     set_seed(seed)
-    state, _ =  env.reset(seed = seed)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    env: gym.Env = build_env(env_name, use_step_rate, args)
+    eval_env: gym.Env = build_env(env_name, use_step_rate, args)
     
-    if not env_name in gym.envs.registry.keys():
-        raise NotImplementedError(f"{env_name} is not supported yet.")
+    algo_dict, model_dict = get_model_configs(args)
+    algo_name: str = args.algos.name
     
-    if isinstance(env.observation_space, spaces.Box):
-        use_dict_state = False
-        action_dim = env.action_space.shape[0]
-        max_action = float(env.action_space.high[0])
-        
-    elif isinstance(env.observation_space, gym.spaces.Dict):
-        use_dict_state = True
-        action_dim = env.action_space.shape[0]
-        max_action = float(env.action_space.high[0])
+    action_agent = ALGO_REGISTRY[algo_name](**algo_dict)
+    
+    model_args = args.algos.get("models", None)
+    if model_args is None:
+        model_name = None  
+        rep_agent = action_agent
     else:
-        raise NotImplementedError(
-            f"Unsupported observation space type: {type(env.observation_space)}"
-        )
+        model_name = model_args.get("name", None)    
+        rep_agent = MODEL_REGISTRY[model_name](action_agent, **model_dict)
     
-    state = state_transform(
-        state, 
-        use_dict_state, 
-        use_step_rate, 
-        0.0
-    )
-    state_dim = len(state)
+    state, _ =  env.reset(seed = seed)
     
-    env_dict = {
-        "env": env,
-        "state_dim": state_dim,
-        "action_dim": action_dim,
-        "max_action": max_action,
-    }
-    
-    pprint(env_dict)
-
-    model_dict = {
-        **OmegaConf.to_container(algo_args, resolve=True),
-        **env_dict
-    }
-
-    policy = ALGO_REGISTRY[model_name](debug_mode, model_dict, device)
-    
-    replay_buffer = BUFFER_REGISTRY[DDPG](state_dim, action_dim, algo_args.buffer_size, device)
-    
-    if model_name == TEMPORL:
-        max_repetition = model_args.max_repetition
-        skip_e_greedy = model_args.skip_e_greedy
-        skip_replay_buffer = BUFFER_REGISTRY[model_name](
-            state_dim, 
-            action_dim, 
-            algo_args.buffer_size, 
-            debug_mode, 
-            max_repetition,
-            device
-        )
-
     if use_wandb:
-        import wandb 
         wandb.init(
-            project=env_name,       
-            name=f"{env_name}_{model_name}_seed{seed}",
+            project=to_wandb_name(env_name),       
+            name=f"{algo_name}_{model_name}_seed{args.seed}",
             group=args.group_name,
-            config=OmegaConf.to_container(args, resolve=True)
+            config=OmegaConf.to_container(args, resolve=True),
         )
-
-    episode_reward = 0
-    training_steps = 0
-    num_decisions = 0
-    mean_rep: list[int] = []
-
+    
+    episode_stats_dict: dict[str, Any] = {
+        "episode_reward": 0.0,
+        "td_error": [],
+        "q_loss": [],
+        "repetition": [],
+    }
+    
     while training_steps < total_training_steps:
-        if training_steps < warmup_steps:
-            action = env.action_space.sample()
-
-            if model_name == TEMPORL or model_name == NEW_Model:
-                repetition = int(np.random.randint(1, max_repetition + 1))
-            elif model_name == DDPG:
-                repetition = 1
-
-        else:
-            action = (
-                policy.select_action(state) + \
-                    np.random.normal(0, max_action * algo_args.expl_noise, size=action_dim)
-            ).clip(-max_action, max_action)
-            
-            if model_name == TEMPORL:
-                if np.random.random() < skip_e_greedy:
-                    repetition = int(np.random.randint(1, max_repetition + 1))
-                else:
-                    repetition = policy.select_skip(
-                        state, 
-                        action, 
+        with episode_stats(episode_stats_dict) as _log:
+            done = False
+            state = state_transform(state, use_step_rate, env)
+            while not done:
+                train = training_steps >= warmup_steps
+                if train:
+                    action = action_agent.select_action(state)
+                    repetition = rep_agent.select_repetition(
+                        state,
+                        action,
                     )
-            elif model_name == DDPG:
-                repetition = 1
-            else:
-                raise NotImplementedError
+                else:
+                    action = env.action_space.sample()
+                    repetition = rep_agent.select_repetition(state)
+                print(f"Selected action: {action}")
+                _log["repetition"].append(repetition)
                 
-        num_decisions += 1 
-        mean_rep.append(repetition)
-
-        if debug_mode:
-            future_states, future_rewards, future_dones = store_future_states(
-                env = env,
-                action = action, 
-                repetition = repetition,
-                max_repetition = max_repetition,
-                use_step_rate = use_step_rate,
-                use_dict_state = use_dict_state
-            )
-            
-        skip_states, skip_rewards = [], []
-        
-        for repeat_step in range(repetition):
-            step_rate = env._elapsed_steps / env._max_episode_steps
-            training_steps += 1
-        
-            next_state, reward, terminated, truncated, _ = env.step(action)
-
-            next_state = state_transform(
-                next_state, 
-                use_dict_state, 
-                use_step_rate, 
-                env._elapsed_steps / env._max_episode_steps
-            )
-            done = terminated or truncated
-            
-            skip_states.append(state)
-            skip_rewards.append(reward)
-            
-            replay_buffer.add(
-                state, action, next_state, reward, done
-            )
-
-            if model_name == TEMPORL or model_name == NEW_Model:
-                skip_id = 0
-                for idx, start_state in enumerate(skip_states):
-                    skip_reward = 0
-                    for exp, r in enumerate(skip_rewards[skip_id:]):
-                        skip_reward += np.power(policy.discount, exp) * r
-                    skip_step = repeat_step - skip_id
-
-                    if debug_mode:
-                        """
-                        After get fr_list[0] -> get next_state fs_list[0] and done signal dn_list[0]
-                        """
-                        fs_list = future_states[idx: idx + max_repetition]
-                        fr_list = future_rewards[idx : idx + max_repetition] # future rewards
-                        dr_list = future_dones[idx : idx + max_repetition] # discounted rewards
-                        for r_idx, r in enumerate(fr_list):
-                            discounted_r = 0
-                            for num_exp in range(r_idx + 1):
-                                discounted_r += np.power(policy.discount, num_exp) * fr_list[num_exp]
-                            dr_list[r_idx] = discounted_r
-                        dn_list = future_dones[idx : idx + max_repetition] # done flags
-                        skip_replay_buffer.add(
-                            start_state, 
-                            action, 
-                            skip_step, 
-                            next_state, 
-                            skip_reward, 
-                            done,
-                            np.array(fs_list),
-                            np.expand_dims(dr_list, axis=-1), 
-                            np.expand_dims(dn_list, axis=-1)
-                        )
+                skip_states, skip_rewards = [], []
+                for _ in range(repetition):
+                    training_steps += 1
+                    (
+                        next_state, 
+                        reward, 
+                        terminated, 
+                        truncated, 
+                        _
+                    ) = env.step(action)
+                    done: bool = terminated or truncated
+                    next_state = state_transform(next_state, use_step_rate, env)
                     
-                    else:
-                        skip_replay_buffer.add(
-                            start_state, 
-                            action, 
-                            skip_step, 
-                            next_state, 
-                            skip_reward, 
-                            done,
-                        )
-                    skip_id += 1
-                
-            state = next_state
-            episode_reward += reward
-
-            # Train agent after collecting sufficient data
-            if training_steps >= warmup_steps:
-                policy_log_dict = policy.train(replay_buffer, algo_args.batch_size)
-                if model_name == TEMPORL:
-                    rep_critic_loss = policy.train_skip(skip_replay_buffer, algo_args.batch_size)
-                    log_dict = policy_log_dict | rep_critic_loss
-                elif model_name == DDPG:
-                    log_dict = policy_log_dict
-                else:
-                    raise ValueError(f"Unsupported model name for training. [{model_name}]")
-                
-                if use_wandb:
-                    for k, v in log_dict.items():
-                        wandb.log({k:v}, step = training_steps)
-                        
-                    if debug_mode and model_name == TEMPORL:
-                        policy.build_debug_log(step = training_steps)
-                        
-            # Evaluate episode
-            if (training_steps + 1) % args.eval_interval == 0:
-                eval_log_dict = eval(
-                    policy, 
-                    env_name, 
-                    seed, 
-                    eval_episodes=eval_n_episodes,
-                    model_name=model_name, 
-                    use_dict_state=use_dict_state,
-                    use_step_rate=use_step_rate,
-                )
-                if use_wandb:
-                    for k, v in eval_log_dict.items():
-                        wandb.log({k:v}, step = training_steps)
-
-            if done:
-                # +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
-                print(
-                    f"Training steps: {training_steps + 1} Reward: {episode_reward:.3f}")
-                if model_name == TEMPORL or model_name == NEW_Model:
-                    print("Repetition list:", mean_rep)
-                if use_wandb:
-                    wandb.log(
-                        {
-                            "episode_reward": episode_reward,
-                            "episode_length": env._elapsed_steps,
-                            "num_decisions": num_decisions,
-                            "mean_repetition": np.mean(mean_rep),
-                            "std_repetition": np.std(mean_rep)
-                        }, step=training_steps
+                    _log["episode_reward"] += reward
+                    skip_states.append(state)
+                    skip_rewards.append(reward)
+                    
+                    rep_agent.add(
+                        state,
+                        action,
+                        reward,
+                        next_state,
+                        done,
+                        skip_states = skip_states,
+                        skip_rewards = skip_rewards
                     )
+                    if train:
+                        log_dict: dict[str, Any] = rep_agent.update()
+                        for key, value in log_dict.items():
+                            _log[key].append(value)
+                            
+            
+                    state = next_state
+                    if eval_interval > 0 and training_steps % eval_interval == 0:
+                        eval(
+                            eval_env,
+                            rep_agent,
+                            seed,
+                            eval_episodes,
+                            use_step_rate,
+                            training_steps,
+                            use_wandb,
+                        )
+                        
+                    training_rate = (training_steps - warmup_steps) / (total_training_steps - warmup_steps)
+                    rep_agent.epsilon_decay(training_rate)
+                    if use_lr_decay:
+                        rep_agent.lr_decay(training_rate)
+                        
+                    if done:
+                        num_episodes += 1
+                        state, _ = env.reset(seed = seed + num_episodes)
+                        _log["lr"] = rep_agent.lr
+                        _log["epsilon"] = rep_agent.epsilon
+                        print(f"Training steps: {training_steps} | Episode: {num_episodes} | LR: {rep_agent.lr} | Epsilon: {rep_agent.epsilon} | Rewards: {_log['episode_reward']}")
+                        if use_wandb:
+                            log = {}
+                            for key, value in _log.items():
+                                if isinstance(value, list) and len(value) > 0:
+                                    log[f"train/{key}"] = np.mean(value)
+                                elif isinstance(value, (float, int)):
+                                    log[f"train/{key}"] = value
+                            wandb.log(log, step=training_steps)
+                        break
+    env.close()
+    eval_env.close()
 
-                # Reset environment
-                state, _ = env.reset()
-                
-                state = state_transform(
-                    state, 
-                    use_dict_state, 
-                    use_step_rate, 
-                    0.0
-                )
-                episode_reward = 0
-                num_decisions = 0
-                mean_rep.clear()
-                break
-        
+def eval(
+    eval_env: gym.Env,
+    rep_agent,
+    seed: int,
+    eval_episodes: int,
+    use_step_rate: bool,
+    training_steps: int,
+    use_wandb: bool,
+):
+    
 
+    total_rewards: list[float] = []
+    eval_repetition: list[int] = []
+    
+    for ep in range(eval_episodes):
+        state, _ = eval_env.reset(seed = seed + ep + 1000)
+        done = False
+        episode_reward: float = 0.0
+        epi_repetition: list[int] = []
+        while not done:
+            state = state_transform(state, use_step_rate, eval_env)
+            action = rep_agent.select_action(
+                state,
+                deterministic = True
+            )
+            repetition = rep_agent.select_repetition(
+                state,
+                action,
+                deterministic = True
+            )
+            epi_repetition.append(repetition)
+            for _ in range(repetition):
+                next_state, reward, terminated, truncated, _ = eval_env.step(action)
+                done = terminated or truncated
+                episode_reward += reward
+                state = next_state
+                if done:
+                    break
+        total_rewards.append(episode_reward)
+        eval_repetition.append(np.mean(epi_repetition))
+
+    avg_reward: float = np.mean(total_rewards)
+    avg_repetition: float = np.mean(eval_repetition)
+    std_repetition: float = np.std(eval_repetition)
+    if use_wandb:
+        wandb.log(
+            {
+                "eval/average_reward": avg_reward,
+                "eval/average_repetition": avg_repetition,
+                "eval/std_repetition": std_repetition,
+            },
+            step=training_steps,
+        )
+    print(f"[Evaluation] Training steps: {training_steps} | Average Reward over {eval_episodes} episodes: {avg_reward}")
+    
+    
 if __name__ == "__main__":
-    TEMPORL = "temporl"
-    DDPG = "vanilla_ddpg"
-    NEW_Model = "new"
     main()
