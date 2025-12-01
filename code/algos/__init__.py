@@ -1,6 +1,7 @@
 from .DQN import DQN
 
 from .TempoRL import TempoRL
+from .UTE import UTE
 
 ALGO_REGISTRY = {
     "DQN": DQN,
@@ -8,4 +9,5 @@ ALGO_REGISTRY = {
 
 MODEL_REGISTRY = {
     "TempoRL": TempoRL,
+    "UTE": UTE,
 }

@@ -1,57 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
+import torch.nn.utils as nn_utils
 
 from copy import deepcopy
 
 from .buffer.naive_buffer import NaiveReplayBuffer
+from ._modules import QNet, DuelDQN
 
-class QNet(nn.Module):
-    def __init__(
-        self, 
-        state_dim, 
-        n_actions, 
-        hidden_dim, 
-        data_type
-    ):
-        super(QNet, self).__init__()
-        self.data_type = data_type
-        if self.data_type == "image":
-            C_dim = state_dim[0]
-            h_dim = state_dim[1]
-            w_dim = state_dim[2] 
-            self.cnn = nn.Sequential(
-                nn.Conv2d(C_dim, 32, kernel_size=8, stride=4), nn.ReLU(),
-                nn.Conv2d(32, 64, kernel_size=4, stride=2), nn.ReLU(),
-                nn.Conv2d(64, 64, kernel_size=3, stride=1), nn.ReLU(),
-                nn.Flatten(),
-            )
-            self.test_tensor = torch.zeros((1, C_dim, h_dim, w_dim))
-            with torch.no_grad():
-                cnn_output_dim = self.cnn(self.test_tensor).shape[-1]
-            
-            self.fc = nn.Sequential(
-                nn.Linear(cnn_output_dim, hidden_dim), nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
-                nn.Linear(hidden_dim, n_actions)
-            )
-        elif self.data_type == "feature":
-            self.fc = nn.Sequential(
-                nn.Linear(state_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, n_actions)
-            )
-        else:
-            raise ValueError(f"data_type {self.data_type} is not supported.")
-
-    def forward(self, x):
-        if self.data_type == "image":
-            x = self.cnn(x)
-        x = self.fc(x)
-        return x
 
 class DQN:
     def __init__(
@@ -65,10 +21,17 @@ class DQN:
         batch_size,
         hidden_dim,
         e_greedy_type,
+        e_decay,
+        max_epsilon,
         min_epsilon,
-        data_type,
-        target_update_rate,
+        use_image,
+        use_lr_decay,
+        use_hard_update,
+        update_interval,
+        tau,
+        max_grad_norm,
         use_ddqn,
+        use_dueling,
         device
     ):
         self.state_dim: int = state_dim
@@ -77,64 +40,76 @@ class DQN:
         self.buffer_size: int = buffer_size
         self.batch_size: int = batch_size
         self.hidden_dim: int = hidden_dim
+        self.update_interval: int = update_interval
+        self.e_decay: int = e_decay
         
         self.lr: float = lr
-        self.epsilon: float = 1.0
-        self.gamma: float = gamma
-        self.min_epsilon: float = min_epsilon
-        self.initial_lr: float = self.lr
-        self.final_lr: float = 0.1 * self.initial_lr
-        self.power_value: float = 10.0
-        self.tau: float = target_update_rate
+        self.initial_lr: float = lr
+        self.final_lr: float = lr * 0.1 
         
-        self.use_ddqn: bool = use_ddqn
+        self.tau: float = tau
+        self.gamma: float = gamma
+        self.epsilon: float = max_epsilon
+        self.max_epsilon: float = max_epsilon
+        self.min_epsilon: float = min_epsilon
+        self.max_grad_norm: float = max_grad_norm
         
         self.e_greedy_type: str = e_greedy_type
-        self.data_type: str = data_type
+        self.use_image: bool = use_image
         self.device: str = device
         
-        self.Actor = QNet(
-            self.state_dim, 
-            self.n_actions, 
-            self.hidden_dim,
-            self.data_type,
-        ).to(self.device)
+        self.use_ddqn: bool = use_ddqn
+        self.use_dueling: bool = use_dueling
+        self.use_lr_decay: bool = use_lr_decay
+        self.use_hard_update: bool = use_hard_update
+        
+        if self.use_dueling:
+            self.Actor = DuelDQN(
+                self.state_dim,
+                self.n_actions,
+                self.hidden_dim,
+                self.use_image,
+            ).to(self.device)
+        else:
+            self.Actor = QNet(
+                self.state_dim, 
+                self.n_actions, 
+                self.hidden_dim,
+                self.use_image,
+            ).to(self.device)
+        
         self.Actor_optimizer = optim.Adam(
             self.Actor.parameters(), 
-            lr=self.lr
+            lr=self.lr,
         )
         self.target_Actor = deepcopy(self.Actor).to(self.device)
-            
+        self.loss_func = nn.SmoothL1Loss()
+
         self.replay_buffer = NaiveReplayBuffer(
             buffer_size=self.buffer_size,
             state_dim=self.state_dim,
             action_dim=self.action_dim,
             device=self.device
         )
-
-    def epsilon_decay(self, training_rate):
-        if self.e_greedy_type == "linear":
-            self.epsilon = min(1.0, max(self.min_epsilon, 1.0 - training_rate))
-        elif self.e_greedy_type == "power":
-            self.epsilon = (min(1.0, max(self.min_epsilon, (1.0 - training_rate) ** self.power_value)))
-        else:
-            raise ValueError(f"e_greedy_type {self.e_greedy_type} is not supported.")
         
+    def epsilon_decay(self, training_steps):
+        training_steps = torch.tensor(training_steps, dtype=torch.float32)
+        if self.e_greedy_type == "exponential":
+            self.epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * torch.exp(-1.0 * training_steps / self.e_decay).item()
+        else:
+            raise NotImplementedError(f"Epsilon greedy type {self.e_greedy_type} is not supported.")
+
     def lr_decay(self, training_rate):
-        training_rate = torch.clamp(
-            torch.tensor(training_rate, dtype=torch.float32),
-            0.0, 1.0
-        )
         cosine = 0.5 * (1 + torch.cos(torch.pi * training_rate))
         self.lr = self.final_lr + (self.initial_lr - self.final_lr) * cosine.item()
         for param_group in self.Actor_optimizer.param_groups:
             param_group['lr'] = self.lr
-
+    
     def select_action(
         self,
-        state, 
-        deterministic = False,
-    ):
+        state: torch.Tensor, 
+        deterministic: bool = False,
+    ) -> int:
         if deterministic or torch.rand(1).item() > self.epsilon:
             with torch.no_grad():
                 q_values = self.Actor(state)
@@ -149,9 +124,9 @@ class DQN:
         state,
         action = None,
         deterministic = False
-    ):
+    ) -> int:
         return 1
-
+    
     def add(
         self,
         state,
@@ -159,8 +134,8 @@ class DQN:
         reward,
         next_state,
         done,
-        skip_states,
-        skip_rewards
+        skip_states = None,
+        skip_rewards = None
     ):
         self.replay_buffer.add(
             state,
@@ -168,9 +143,9 @@ class DQN:
             reward,
             next_state,
             done
-    )
-        
-    def update(self):
+        )
+
+    def update(self, training_steps: int) -> dict:
         (
             states, 
             actions, 
@@ -178,27 +153,42 @@ class DQN:
             next_states, 
             not_dones,
         ) = self.replay_buffer.sample(self.batch_size)
+        
         with torch.no_grad():
             if self.use_ddqn:
                 next_actions = self.Actor(next_states).argmax(dim=-1, keepdim=True)
-                next_q_values = self.target_Actor(next_states).gather(1, next_actions)
+                next_q_values = self.target_Actor(next_states).gather(dim=-1, index=next_actions)
             else:
                 next_q_values = torch.max(self.target_Actor(next_states), dim = -1, keepdim = True)[0]
             target_q_values = rewards + self.gamma * not_dones * next_q_values
         
-        current_q_values = self.Actor(states).gather(1, actions.long())        
-        loss = F.mse_loss(current_q_values, target_q_values)
+        q_values = self.Actor(states).gather(-1, index=actions.long())
+        q_loss = self.loss_func(q_values, target_q_values)
         
         self.Actor_optimizer.zero_grad()
-        loss.backward()
+        q_loss.backward()
+        grad_before_clip = nn_utils.clip_grad_norm_(
+            self.Actor.parameters(), 
+            max_norm=self.max_grad_norm
+        )
         self.Actor_optimizer.step()
         
-        # Soft update of target network
-        for target_param, param in zip(self.target_Actor.parameters(), self.Actor.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
+        if self.use_hard_update:
+            if training_steps % self.update_interval == 0:
+                self.target_Actor.load_state_dict(self.Actor.state_dict())
+        else:
+            for target_param, param in zip(
+                self.target_Actor.parameters(), 
+                self.Actor.parameters()
+            ):
+                target_param.data.copy_(
+                    (1.0 - self.tau) * target_param.data + self.tau * param.data
+                )
         
-        log_dict: dict[str, float] = {
-            "td_error": (target_q_values - current_q_values).cpu().mean().item(),
-            "q_loss": loss.cpu().item()
+        log_dict: dict = {
+            "clipped_actor_grad_norm": min(grad_before_clip.clone().cpu().item(), self.max_grad_norm),
+            "q_loss": q_loss.clone().cpu().item(),
+            "td_error": (target_q_values - q_values).clone().cpu().mean().item(),
         }
+        
         return log_dict

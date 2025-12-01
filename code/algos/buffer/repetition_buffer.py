@@ -1,6 +1,6 @@
 import torch
 
-class NaiveReplayBuffer():
+class SkipBuffer:
     def __init__(
         self, 
         buffer_size, 
@@ -18,20 +18,23 @@ class NaiveReplayBuffer():
             
         self.state_buffer = torch.zeros((buffer_size, *state_dim))
         self.action_buffer = torch.zeros((buffer_size, action_dim))
+        self.repetition_buffer = torch.zeros((buffer_size, 1))
         self.reward_buffer = torch.zeros((buffer_size, 1))
         self.next_state_buffer = torch.zeros((buffer_size, *state_dim))
         self.not_done = torch.zeros((buffer_size, 1))
-        
+    
     def add(
         self,
         state,
         action,
+        repetition,
         reward,
         next_state,
         done
     ):
         self.state_buffer[self.ptr] = state
         self.action_buffer[self.ptr] = action
+        self.repetition_buffer[self.ptr] = repetition
         self.reward_buffer[self.ptr] = reward
         self.next_state_buffer[self.ptr] = next_state
         self.not_done[self.ptr] = 1. - done
@@ -44,8 +47,8 @@ class NaiveReplayBuffer():
         return (
             torch.FloatTensor(self.state_buffer[idxs]).to(self.device),
             torch.FloatTensor(self.action_buffer[idxs]).to(self.device),
+            torch.FloatTensor(self.repetition_buffer[idxs]).to(self.device),
             torch.FloatTensor(self.reward_buffer[idxs]).to(self.device),
             torch.FloatTensor(self.next_state_buffer[idxs]).to(self.device),
             torch.FloatTensor(self.not_done[idxs]).to(self.device),
         )
-        
