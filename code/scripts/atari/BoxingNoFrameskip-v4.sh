@@ -22,13 +22,13 @@ if [ -z "$GN" ]; then # if ALGO is not provided, set default
 fi
 
 ENVS=atari
-ENV_NAME=QbertNoFrameskip-v4
-total_training_steps=2000000
-eval_interval=10000
+ENV_NAME=BreakoutNoFrameskip-v4
+total_training_steps=2500000
+eval_interval=20000
+eval_episodes=10
 video_save_dir=./videos/${ENV_NAME}/algo_${ALGO}/model_${MODEL}/
-use_ddqn=false
 use_dueling=true
-e_decay=100000
+e_decay=50000
 
 EXTRA_ARGS=()
 
@@ -38,12 +38,15 @@ fi
 if [ "$ALGO" != "null" ]; then
     EXTRA_ARGS+=("algos=$ALGO")
 fi
+if [ "$MODEL" != "null" ]; then
+    EXTRA_ARGS+=("algos/models=$MODEL")
+fi
 if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs=$ENVS")
     EXTRA_ARGS+=("envs.env_name=$ENV_NAME")
 fi
     
-for SEED in 0
+for SEED in 0 1 2 3 4
 do
     ARGS=(
         "use_wandb=$USE_WANDB"
@@ -51,7 +54,7 @@ do
         "seed=$SEED"
         "total_training_steps=$total_training_steps"
         "eval_interval=$eval_interval"
-        "algos.use_ddqn=$use_ddqn"
+        "eval_episodes=$eval_episodes"
         "algos.use_dueling=$use_dueling"
         "common_args.e_decay=$e_decay"
         "envs.noop_max=30"

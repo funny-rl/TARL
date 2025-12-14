@@ -1,0 +1,7 @@
+defaults:
+    - _self_
+    - models: null
+
+
+algo_name: DDPG
+expl_noise: 0.1

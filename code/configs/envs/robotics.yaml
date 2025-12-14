@@ -1,0 +1,4 @@
+env_name: null
+env_type: robotics
+
+max_episode_steps: 50

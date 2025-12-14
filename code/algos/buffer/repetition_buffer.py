@@ -17,7 +17,7 @@ class SkipBuffer:
             state_dim = (state_dim,)
             
         self.state_buffer = torch.zeros((buffer_size, *state_dim))
-        self.action_buffer = torch.zeros((buffer_size, action_dim))
+        self.action_buffer = torch.zeros((buffer_size, action_dim)) 
         self.repetition_buffer = torch.zeros((buffer_size, 1))
         self.reward_buffer = torch.zeros((buffer_size, 1))
         self.next_state_buffer = torch.zeros((buffer_size, *state_dim))
@@ -33,7 +33,7 @@ class SkipBuffer:
         done
     ):
         self.state_buffer[self.ptr] = state
-        self.action_buffer[self.ptr] = action
+        self.action_buffer[self.ptr] = action if torch.is_tensor(action) else torch.tensor(action)
         self.repetition_buffer[self.ptr] = repetition
         self.reward_buffer[self.ptr] = reward
         self.next_state_buffer[self.ptr] = next_state

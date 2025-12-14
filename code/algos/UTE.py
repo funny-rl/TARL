@@ -5,7 +5,7 @@ import torch.optim as optim
 from utils.utils import action_transform
 
 from .buffer.repetition_buffer import SkipBuffer
-from ._modules import Duel_Ensemble_Net, Ensemble_DQN
+from ._modules import Duel_Ensemble_Net, Ensemble_DQN, eps_rep_selection
 
 class UTE:
     def __init__(
@@ -19,6 +19,7 @@ class UTE:
         use_dueling,
         num_ensemble,
         uncertainty_factor,
+        use_geo_e_greedy
     ):
         self.base_agent = base_agent
         self.state_dim: int = base_agent.state_dim
@@ -45,7 +46,6 @@ class UTE:
         self.epsilon: float = max_epsilon
         self.max_epsilon: float = max_epsilon
         self.min_epsilon: float = min_epsilon
-        self.max_grad_norm: float = base_agent.max_grad_norm
         self.uncertainty_factor: float = uncertainty_factor
         self.bernoulli_probability: float = 0.5
         
@@ -53,10 +53,10 @@ class UTE:
         self.device: str = base_agent.device
         
         self.use_image: bool = base_agent.use_image
-        self.use_ddqn: bool = base_agent.use_ddqn
         self.use_dueling: bool = use_dueling
         self.use_lr_decay: bool = base_agent.use_lr_decay
         self.use_hard_update: bool = base_agent.use_hard_update
+        self.use_geo_e_greedy: bool = use_geo_e_greedy
         
         if self.use_dueling:
             self.Rep_Actor = Duel_Ensemble_Net(
@@ -92,12 +92,15 @@ class UTE:
     def epsilon_decay(self, training_steps):
         if hasattr(self.base_agent, "epsilon_decay"):
             self.base_agent.epsilon_decay(training_steps)
-
-        training_steps = torch.tensor(training_steps, dtype=torch.float32)
-        if self.e_greedy_type == "exponential":
-            self.epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * torch.exp(-1.0 * training_steps / self.e_decay).item()
-        else:
-            raise NotImplementedError(f"Epsilon greedy type {self.e_greedy_type} is not supported.")
+            self.epsilon = self.base_agent.epsilon
+        else: 
+            training_steps = torch.tensor(training_steps, dtype=torch.float32)
+            if self.e_greedy_type == "linear":
+                self.epsilon = self.max_epsilon - (self.max_epsilon - self.min_epsilon) * torch.clamp(self.e_decay - training_steps, 0.0, 1.0).item()
+            elif self.e_greedy_type == "exponential":
+                self.epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * torch.exp(-1.0 * training_steps / self.e_decay).item()
+            else:
+                raise NotImplementedError(f"Epsilon greedy type {self.e_greedy_type} is not supported.")
 
     def lr_decay(self, training_rate):
         self.base_agent.lr_decay(training_rate)
@@ -125,12 +128,17 @@ class UTE:
                 mean_q_values = torch.mean(repetition_q_values, dim=0)
                 std_q_values = torch.std(repetition_q_values, dim=0)
                 
-                Q_tilda = mean_q_values + self.uncertainty_factor * std_q_values
-                repetitions = torch.argmax(Q_tilda, dim=-1).squeeze().item() + 1
+                rep_Qs = mean_q_values + self.uncertainty_factor * std_q_values
+                repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
+            if deterministic:
+                return repetitions, rep_Qs
 
         else:
-            repetitions = torch.randint(1, self.max_repetition + 1, (1,)).item()
-            
+            repetitions = eps_rep_selection(
+                self.max_repetition,
+                self.use_geo_e_greedy,
+            )
+
         return repetitions
 
     def add(
@@ -182,16 +190,11 @@ class UTE:
         rep_idx = reps.long() - 1
         
         with torch.no_grad():
-            if self.use_ddqn:
-                next_actions = self.base_agent.Actor(next_states).argmax(dim=-1, keepdim=True)
-                next_q_values = self.base_agent.target_Actor(next_states).gather(dim=-1, index=next_actions)
-            else:
-                next_actions = self.base_agent.target_Actor(next_states)
-                next_q_values = torch.max(next_actions, dim=-1, keepdim=True)[0]
-            
+            next_actions = self.base_agent.target_Actor(next_states)
+            next_q_values = torch.max(next_actions, dim=-1, keepdim=True)[0]
             target_Q = rewards + not_dones * (self.gamma ** reps) * next_q_values
-        
-        actions =action_transform(actions, self.n_actions, self.device)
+
+        actions = action_transform(actions, self.n_actions, self.device)
         q_values = self.Rep_Actor(states, actions)
         
         masks = torch.bernoulli(torch.zeros((self.batch_size, self.num_ensemble), device=self.device) + self.bernoulli_probability)
@@ -215,3 +218,7 @@ class UTE:
             "rep_td_error": (q_values.mean(dim = 0) - target_Q).mean().clone().cpu().item(),
         })
         return log_dict
+    
+    def save_model(self, path: str):
+        torch.save(self.Rep_Actor.state_dict(), path + "rep_actor.pth")
+        self.base_agent.save_model(path)

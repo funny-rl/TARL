@@ -1,5 +1,5 @@
 model_name: UTE
 
 max_repetition: 10
-num_ensemble: 5
-uncertainty_factor: 1.0
+num_ensemble: 10
+uncertainty_factor: 2.0

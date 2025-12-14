@@ -1,6 +1,8 @@
 #!/bin/bash
 
-cd ../
+cd ../../
+
+export MUJOCO_GL=egl
 export HYDRA_FULL_ERROR=1
 
 ALGO=$1
@@ -9,7 +11,7 @@ USE_WANDB=$3
 GN=$4
 
 if [ -z "$ALGO" ]; then # if ALGO is not provided, set default
-    ALGO="DQN"
+    ALGO="DDPG"
 fi
 if [ -z "$MODEL" ]; then # if MODEL is not provided, set default
     MODEL=null
@@ -18,18 +20,24 @@ if [ -z "$USE_WANDB" ]; then # if ALGO is not provided, set default
     USE_WANDB=false
 fi
 if [ -z "$GN" ]; then # if ALGO is not provided, set default
-    GN="DQN"
+    GN="DDPG"
 fi
 
-ENVS=atari
-ENV_NAME=BreakoutNoFrameskip-v4
-total_training_steps=2500000
-eval_interval=20000
+ENVS=classic
+ENV_NAME=FetchReachDense-v4
+total_training_steps=200000
+eval_interval=1000
 eval_episodes=10
 video_save_dir=./videos/${ENV_NAME}/algo_${ALGO}/model_${MODEL}/
-use_ddqn=false
-use_dueling=true
-e_decay=100000
+use_dueling=false
+e_decay=20000 #  standard: total_training_steps * 0.1
+use_step_rate=true
+use_image=false
+lr=0.0005
+use_lr_decay=true
+use_hard_update=false
+hidden_dim=256
+use_geo_e_greedy=true
 
 EXTRA_ARGS=()
 
@@ -41,13 +49,14 @@ if [ "$ALGO" != "null" ]; then
 fi
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
+    EXTRA_ARGS+=("algos.models.max_repetition=5")
 fi
 if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs=$ENVS")
     EXTRA_ARGS+=("envs.env_name=$ENV_NAME")
 fi
     
-for SEED in 0 1 2 3 4
+for SEED in 0 1 2 3 4 5 6 7 8 9;
 do
     ARGS=(
         "use_wandb=$USE_WANDB"
@@ -56,11 +65,15 @@ do
         "total_training_steps=$total_training_steps"
         "eval_interval=$eval_interval"
         "eval_episodes=$eval_episodes"
-        "algos.use_ddqn=$use_ddqn"
-        "algos.use_dueling=$use_dueling"
+        "use_step_rate=$use_step_rate"
+        "common_args.use_dueling=$use_dueling"
         "common_args.e_decay=$e_decay"
-        "envs.noop_max=30"
-        "envs.frame_stack=4"
+        "common_args.use_image=$use_image"
+        "common_args.lr=$lr"
+        "common_args.use_lr_decay=$use_lr_decay"
+        "common_args.use_hard_update=$use_hard_update"
+        "common_args.hidden_dim=$hidden_dim"
+        "common_args.use_geo_e_greedy=$use_geo_e_greedy"
         "${EXTRA_ARGS[@]}"
     )
     python main.py "${ARGS[@]}"

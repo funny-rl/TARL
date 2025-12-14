@@ -1,6 +1,42 @@
 import torch
 import torch.nn as nn
 
+class Continuous_Q_Actor(nn.Module):
+    def __init__(
+        self, 
+        state_dim, 
+        action_dim, 
+        hidden_dim,
+        max_action
+    ):
+        super(Continuous_Q_Actor, self).__init__()
+        self.max_action = max_action
+        self.fc = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, action_dim), nn.Tanh()
+        )
+    def forward(self, x):
+        return self.max_action * self.fc(x)
+
+class Continuous_Q_Critic(nn.Module):
+    def __init__(
+        self, 
+        state_dim, 
+        action_dim, 
+        hidden_dim,
+    ):
+        super(Continuous_Q_Critic, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(state_dim + action_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        
+    def forward(self, x):
+        q_value = self.fc(x)
+        return q_value
+
 class QNet(nn.Module):
     def __init__(
         self, 
@@ -217,7 +253,6 @@ class Rep_DQN(nn.Module):
             self.encoder = nn.Sequential(
                 nn.Linear(state_dim + action_dim, hidden_dim), nn.ReLU(),
                 nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
                 nn.Linear(hidden_dim, max_repetition)
             )
         
@@ -230,8 +265,7 @@ class Rep_DQN(nn.Module):
             x = torch.cat([state, actions], dim=-1)
             x = self.encoder(x)
         return x
-    
-    
+
 class Duel_Ensemble_Net(nn.Module):
     def __init__(
         self, 
@@ -320,7 +354,7 @@ class Duel_Ensemble_Net(nn.Module):
             "v": v,
             "adv": adv
         })
-    
+
     def forward(self, state, action):
         outputs = []
         for model in self.models:
@@ -429,4 +463,23 @@ class Ensemble_DQN(nn.Module):
             outputs.append(x)
             
         return torch.stack(outputs, dim=0)
-            
+    
+
+
+def eps_rep_selection(
+    max_repetition: int,
+    use_geo_e_greedy: bool = False,
+    p = torch.tensor(0.5)
+):
+    if use_geo_e_greedy:
+        # truncated geometric distribution
+        u = torch.rand(1)
+        trunc_cdf_max = 1 - (1 - p) ** max_repetition
+        u_prime = u * trunc_cdf_max
+        k = torch.ceil(torch.log(1 - u_prime) / torch.log(1 - p))
+        k = torch.clamp(k, min=1, max=max_repetition)
+        return int(k.item())
+    else:
+        return torch.randint(1, max_repetition + 1, (1,)).item()
+    
+     

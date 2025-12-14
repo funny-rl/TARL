@@ -1,3 +1,4 @@
+import json
 import os
 import imageio
 import time
@@ -28,8 +29,8 @@ def main(args):
     print(OmegaConf.to_yaml(args))
     print("-"*60)
 
-    env_args = args.envs
     algo_args = args.algos
+    env_args = args.get("envs", None)
     model_args = algo_args.get("models", None)
     common_args = args.common_args
     
@@ -37,9 +38,10 @@ def main(args):
     use_step_rate: bool = args.use_step_rate
     use_lr_decay: bool = common_args.use_lr_decay
     use_eval_render: bool = True if args.video_save_dir is not None else False
+    save_model: bool = True if args.save_dir is not None else False
     
     algo_name: str = algo_args.algo_name    
-    env_name: str = env_args.env_name
+    env_name: str = env_args.env_name if env_args is not None else None
     video_save_dir: str = args.video_save_dir
     model_name: str = model_args.model_name if model_args is not None else None
     device: str = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -47,16 +49,18 @@ def main(args):
     seed: int = args.seed
     training_steps: int = 0
     num_episodes: int = 0
+    save_interval: int = args.save_interval 
     eval_interval: int = args.eval_interval
     eval_episodes: int = args.eval_episodes
     eval_max_steps: int = args.eval_max_steps
     warmup_steps: int = args.warmup_steps
     total_training_steps: int = args.total_training_steps
-    
+    log_eval_interval: int = args.log_eval_interval
+
     set_seed(seed)
     
-    env = build_env(env_name, env_args)
-    env_info = get_env_info(env_name, env)
+    env = build_env(env_args)
+    env_info = get_env_info(env_args, env, use_step_rate)
     
     OmegaConf.set_struct(common_args, False)
     OmegaConf.set_struct(algo_args, False)
@@ -90,16 +94,17 @@ def main(args):
     
     episode_stats_dict: dict[str, Any] = {
         "episode_reward": 0.0,
-        "action": [],
         "repetition": [],
         "clipped_actor_grad_norm": [],
         "td_error": [],
         "q_loss": [],
         "rep_q_loss": [],
         "rep_td_error": [],
+        "actor_loss": [],
+        "critic_loss": [],
     }
     
-    while training_steps < total_training_steps:
+    while training_steps <= total_training_steps:
         with episode_stats(episode_stats_dict) as log: 
             done = False
             state = state_transform(state, use_step_rate, env, device)
@@ -118,13 +123,11 @@ def main(args):
                 else:
                     action = env.action_space.sample()
                     repetition = rep_agent.select_repetition(state)
-                
-                log["action"].append(action)
+
                 log["repetition"].append(repetition)
                 
                 skip_states, skip_rewards = [], []
                 for _ in range(repetition):
-                    
                     (
                         next_state, 
                         reward, 
@@ -134,16 +137,15 @@ def main(args):
                     ) = env.step(action)
                     done: bool = terminated or truncated
                     next_state = state_transform(next_state, use_step_rate, env, device)
-
-                    log["episode_reward"] += reward
+                    log["episode_reward"] += float(reward)
                     skip_states.append(state)
                     skip_rewards.append(reward)
                     
                     rep_agent.add(
-                        state,
+                        state.cpu(),
                         action,
                         reward,
-                        next_state,
+                        next_state.cpu(),
                         done,
                         skip_states,
                         skip_rewards
@@ -157,22 +159,32 @@ def main(args):
 
                     if eval_interval > 0 and training_steps % eval_interval == 0:
                         eval(
-                            env_name,
-                            env_args,
-                            use_eval_render,
-                            rep_agent,
-                            seed,
-                            eval_episodes,
-                            eval_max_steps,
-                            use_step_rate,
-                            training_steps,
-                            use_wandb,
-                            video_save_dir,
-                            env_info,
-                            device
+                            env_name = env_name,
+                            env_args = env_args,
+                            rep_agent = rep_agent,
+                            seed = seed,
+                            eval_episodes = eval_episodes,
+                            eval_max_steps = eval_max_steps,
+                            use_step_rate = use_step_rate,
+                            training_steps = training_steps,
+                            use_wandb = use_wandb,
+                            use_eval_render = use_eval_render,
+                            video_save_dir = video_save_dir,
+                            log_eval_interval = log_eval_interval,
+                            env_info = env_info,
+                            device = device
                         )
                     
-                    rep_agent.epsilon_decay(max(training_steps - warmup_steps, 0.0))
+                    if save_model and training_steps % save_interval == 0:
+                        save_dir = os.path.join(args.save_dir, f"{algo_name}_{model_name}", f"{training_steps}/")
+                        os.makedirs(save_dir, exist_ok=True)
+                        rep_agent.save_model(save_dir)
+                        print(f"Saved model at {save_dir}")
+
+                    if hasattr(rep_agent, "epsilon_decay"):
+                        rep_agent.epsilon_decay(
+                            max(training_steps - warmup_steps, 0.0),
+                        )
                     if use_lr_decay:
                         training_rate = max(
                             0.0, 
@@ -187,15 +199,24 @@ def main(args):
                         num_episodes += 1
                         state, _ = env.reset()
                         log["lr"] = rep_agent.lr
-                        log["epsilon"] = rep_agent.epsilon
-                        print(f"Training steps: {training_steps} | Episode: {num_episodes} | LR: {rep_agent.lr} | Epsilon: {rep_agent.epsilon} | Rewards: {log['episode_reward']}")
+                        if hasattr(rep_agent, "expl_alpha"):
+                            log["alpha"] = rep_agent.expl_alpha
+                        
+                        msg = f"Training steps: {training_steps} | Episode: {num_episodes} | Rewards: {log['episode_reward']} | LR: {rep_agent.lr} "
+                        if hasattr(rep_agent, "epsilon"):
+                            log["epsilon"] = rep_agent.epsilon
+                            msg += f"| Epsilon: {rep_agent.epsilon}"
+                        print(msg)
                         if use_wandb:
                             _log = {}
                             for key, value in log.items():
-                                if isinstance(value, list) and len(value) > 0:
-                                    _log[f"train/{key}"] = np.mean(value)
-                                elif isinstance(value, (float, int)):
-                                    _log[f"train/{key}"] = value
+                                try:
+                                    if isinstance(value, list) and len(value) > 0:
+                                        _log[f"train/{key}"] = np.mean(value)
+                                    elif isinstance(value, (float, int)):
+                                        _log[f"train/{key}"] = value
+                                except:
+                                    raise ValueError(f"Invalid log value type: {type(value)} for key: {key}")
                             wandb.log(_log, step=training_steps)
                         break
                     training_steps += 1
@@ -204,7 +225,6 @@ def main(args):
 def eval(
     env_name,
     env_args,
-    use_eval_render,
     rep_agent,
     seed,
     eval_episodes,
@@ -212,15 +232,21 @@ def eval(
     use_step_rate,
     training_steps,
     use_wandb,
+    use_eval_render,
     video_save_dir,
+    log_eval_interval,
     env_info,
     device
 ):
     best_frames = None
+    best_log = None
     best_reward = float("-inf")  
     
     print("\n\nStarting Evaluation...\n")
-    eval_env = build_env(env_name, env_args, use_eval_render)
+    eval_env = build_env(
+        env_args, 
+        use_eval_render
+    )
 
     total_rewards: list[float] = []
     eval_repetition: list[int] = []
@@ -233,10 +259,12 @@ def eval(
         epi_repetition: list[int] = []
         state, _ = eval_env.reset(seed=seed + 100 * ep)
         eval_step = 0
+        eval_log: list[dict[str, Any]] = []
+
         while not done:
             state = state_transform(state, use_step_rate, eval_env, device)
             action = rep_agent.select_action(state, deterministic=True)
-            repetition = rep_agent.select_repetition(
+            repetition, rep_Qs = rep_agent.select_repetition(
                 state,
                 action_transform(
                     action, 
@@ -246,13 +274,19 @@ def eval(
                 deterministic=True
             )
             epi_repetition.append(repetition)
+
+            eval_log.append({
+                "step": eval_step,
+                "state": state.cpu().numpy().tolist(),
+                "action": action.tolist(),
+                "repetition": repetition,
+                "rep_Qs": rep_Qs.flatten().cpu().numpy().tolist() if rep_Qs is not None else None,
+            })
             
             for _ in range(repetition):
                 eval_step += 1
-                
                 next_state, reward, terminated, truncated, _ = eval_env.step(action)
-                
-                if use_eval_render:
+                if use_eval_render and (training_steps % log_eval_interval == 0):
                     frame = eval_env.render()
                     frames.append(frame)
                 state = next_state
@@ -265,19 +299,27 @@ def eval(
                     break
 
         end_time = time.time()
+        eval_log.append({"episode_reward": episode_reward})
         print(f"[Evaluation] Episode: {ep+1} | Reward: {episode_reward} | Time: {end_time - start_time:.2f} seconds")
-        if use_eval_render and episode_reward > best_reward:
+        if (use_eval_render and (training_steps % log_eval_interval == 0)) and episode_reward > best_reward:
             best_reward = episode_reward
             best_frames = frames.copy()
+            best_log = eval_log.copy()
         total_rewards.append(episode_reward)
         eval_repetition.append(np.mean(epi_repetition))
     
-    if use_eval_render:
+    if use_eval_render and (training_steps % log_eval_interval == 0):
         save_dir = os.path.join(video_save_dir, str(training_steps))
         os.makedirs(save_dir, exist_ok=True)
-        video_path = f"{save_dir}/reward_{best_reward}.mp4"
+        video_path = f"{save_dir}/test.mp4"
+        
         imageio.mimsave(video_path, best_frames, fps=30)
         print(f"Saved evaluation video at {video_path}")
+
+        log_path = f"{save_dir}/eval_log.json"
+        with open(log_path, 'w') as f:
+            json.dump(best_log, f, indent=4)
+            print(f"Saved evaluation log at {log_path}")
 
     avg_reward: float = np.mean(total_rewards)
     avg_repetition: float = np.mean(eval_repetition)

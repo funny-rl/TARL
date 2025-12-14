@@ -1,5 +1,8 @@
 import torch
 
+
+
+
 class NaiveReplayBuffer():
     def __init__(
         self, 
@@ -31,11 +34,11 @@ class NaiveReplayBuffer():
         done
     ):
         self.state_buffer[self.ptr] = state
-        self.action_buffer[self.ptr] = action
+        self.action_buffer[self.ptr] = action if torch.is_tensor(action) else torch.tensor(action)
         self.reward_buffer[self.ptr] = reward
         self.next_state_buffer[self.ptr] = next_state
         self.not_done[self.ptr] = 1. - done
-        
+
         self.ptr = (self.ptr + 1) % self.buffer_size
         self.size = min(self.size + 1, self.buffer_size)
         

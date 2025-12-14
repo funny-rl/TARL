@@ -5,8 +5,9 @@ import torch.nn.utils as nn_utils
 
 from copy import deepcopy
 
-from .buffer.naive_buffer import NaiveReplayBuffer
 from ._modules import QNet, DuelDQN
+from .buffer.naive_buffer import NaiveReplayBuffer
+
 
 
 class DQN:
@@ -29,8 +30,6 @@ class DQN:
         use_hard_update,
         update_interval,
         tau,
-        max_grad_norm,
-        use_ddqn,
         use_dueling,
         device
     ):
@@ -52,13 +51,11 @@ class DQN:
         self.epsilon: float = max_epsilon
         self.max_epsilon: float = max_epsilon
         self.min_epsilon: float = min_epsilon
-        self.max_grad_norm: float = max_grad_norm
         
         self.e_greedy_type: str = e_greedy_type
         self.use_image: bool = use_image
         self.device: str = device
         
-        self.use_ddqn: bool = use_ddqn
         self.use_dueling: bool = use_dueling
         self.use_lr_decay: bool = use_lr_decay
         self.use_hard_update: bool = use_hard_update
@@ -94,13 +91,15 @@ class DQN:
         
     def epsilon_decay(self, training_steps):
         training_steps = torch.tensor(training_steps, dtype=torch.float32)
-        if self.e_greedy_type == "exponential":
+        if self.e_greedy_type == "linear":
+            self.epsilon = self.max_epsilon - (self.max_epsilon - self.min_epsilon) * torch.clamp(training_steps / self.e_decay, 0.0, 1.0).item()
+        elif self.e_greedy_type == "exponential":
             self.epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * torch.exp(-1.0 * training_steps / self.e_decay).item()
         else:
             raise NotImplementedError(f"Epsilon greedy type {self.e_greedy_type} is not supported.")
 
     def lr_decay(self, training_rate):
-        cosine = 0.5 * (1 + torch.cos(torch.pi * training_rate))
+        cosine = 0.5 * (1 + torch.cos(torch.pi * torch.tensor(training_rate)))
         self.lr = self.final_lr + (self.initial_lr - self.final_lr) * cosine.item()
         for param_group in self.Actor_optimizer.param_groups:
             param_group['lr'] = self.lr
@@ -113,11 +112,10 @@ class DQN:
         if deterministic or torch.rand(1).item() > self.epsilon:
             with torch.no_grad():
                 q_values = self.Actor(state)
-                action: int = q_values.argmax(dim=-1).item()  
+                action = q_values.argmax(dim=-1) 
         else:
-            action: int = torch.randint(0, self.n_actions, ()).item()  
-
-        return action
+            action = torch.randint(0, self.n_actions, (1,))
+        return action.cpu().numpy()
     
     def select_repetition(
         self, 
@@ -125,7 +123,10 @@ class DQN:
         action = None,
         deterministic = False
     ) -> int:
-        return 1
+        if deterministic:
+            return 1, None
+        else:
+            return 1
     
     def add(
         self,
@@ -146,6 +147,7 @@ class DQN:
         )
 
     def update(self, training_steps: int) -> dict:
+
         (
             states, 
             actions, 
@@ -155,11 +157,7 @@ class DQN:
         ) = self.replay_buffer.sample(self.batch_size)
         
         with torch.no_grad():
-            if self.use_ddqn:
-                next_actions = self.Actor(next_states).argmax(dim=-1, keepdim=True)
-                next_q_values = self.target_Actor(next_states).gather(dim=-1, index=next_actions)
-            else:
-                next_q_values = torch.max(self.target_Actor(next_states), dim = -1, keepdim = True)[0]
+            next_q_values = torch.max(self.target_Actor(next_states), dim=-1, keepdim=True)[0]
             target_q_values = rewards + self.gamma * not_dones * next_q_values
         
         q_values = self.Actor(states).gather(-1, index=actions.long())
@@ -167,28 +165,21 @@ class DQN:
         
         self.Actor_optimizer.zero_grad()
         q_loss.backward()
-        grad_before_clip = nn_utils.clip_grad_norm_(
-            self.Actor.parameters(), 
-            max_norm=self.max_grad_norm
-        )
         self.Actor_optimizer.step()
         
         if self.use_hard_update:
             if training_steps % self.update_interval == 0:
                 self.target_Actor.load_state_dict(self.Actor.state_dict())
         else:
-            for target_param, param in zip(
-                self.target_Actor.parameters(), 
-                self.Actor.parameters()
-            ):
-                target_param.data.copy_(
-                    (1.0 - self.tau) * target_param.data + self.tau * param.data
-                )
+            for target_param, param in zip(self.target_Actor.parameters(), self.Actor.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
         
         log_dict: dict = {
-            "clipped_actor_grad_norm": min(grad_before_clip.clone().cpu().item(), self.max_grad_norm),
             "q_loss": q_loss.clone().cpu().item(),
             "td_error": (target_q_values - q_values).clone().cpu().mean().item(),
         }
         
         return log_dict
+
+    def save_model(self, path: str):
+        torch.save(self.Actor.state_dict(), path + "actor.pth")

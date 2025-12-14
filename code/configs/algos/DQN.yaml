@@ -4,5 +4,3 @@ defaults:
     - models: null
 
 algo_name: DQN
-use_ddqn: false
-use_dueling: false

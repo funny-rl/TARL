@@ -38,13 +38,24 @@ def state_transform(
     """Transform the state based on whether step rate is used."""
     if isinstance(state, torch.Tensor):
         state_tensor = state.clone().detach()
+    elif isinstance(state, dict):
+        state_tensor = torch.tensor(
+            np.concatenate(
+                    [
+                        state["observation"], 
+                        state["desired_goal"], 
+                        state["achieved_goal"]
+                    ], axis=-1
+            ), dtype=torch.float32
+        )
     else:
         state_tensor = torch.tensor(state, dtype=torch.float32)
-    
     if state_tensor.dim() == 1:
         if use_step_rate:
             step_rate = torch.tensor([env._elapsed_steps / env._max_episode_steps])
             state_tensor = torch.cat([state_tensor, step_rate], dim=-1).unsqueeze(0)
+        else:
+            state_tensor = state_tensor.unsqueeze(0)
     
     elif state_tensor.dim() == 3:
         if state_tensor.max() > 1.0 + 1e-6:
@@ -60,12 +71,26 @@ def action_transform(
     device: str
 ) -> torch.Tensor:
     """Transform the action to a tensor."""
+    if isinstance(action, np.ndarray):
+        action = torch.tensor(action, dtype=torch.float32)
+        
     if isinstance(action, torch.Tensor):
         action_tensor = action.clone().detach() # (bs x 1)
         if n_actions is not None:
             action_tensor = action_tensor.long()
-            if action_tensor.dim() == 2:
+            if action_tensor.dim() == 1:
+                one_hot = F.one_hot(action_tensor, num_classes=n_actions)
+                action_tensor = one_hot.float()
+            elif action_tensor.dim() == 2:
                 action_tensor = F.one_hot(action_tensor, num_classes=n_actions).squeeze(1).float()
+            else:
+                raise ValueError(f"Not supported action shape: {action_tensor.shape} for discrete action space.")
+        else:
+            action_tensor = action_tensor.float()
+            if action_tensor.dim() == 1:
+                action_tensor = action_tensor.unsqueeze(0)
+            else:
+                raise ValueError(f"Not supported action shape: {action_tensor.shape} for discrete action space.")
                 
     elif type(action) == int and n_actions is not None:
         action_tensor = torch.tensor(action, dtype=torch.int64)
@@ -76,5 +101,5 @@ def action_transform(
             raise ValueError("Not supported action shape for discrete action space.")
     else:
         raise ValueError("Unsupported action type.")
-
+    
     return action_tensor.to(device)

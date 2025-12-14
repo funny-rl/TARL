@@ -1,6 +1,6 @@
 env_name: null
 env_type: atari
 
-noop_max: 0
+noop_max: 30
 frame_stack: 4
 
