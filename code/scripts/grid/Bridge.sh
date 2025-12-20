@@ -10,7 +10,7 @@ USE_WANDB=$3
 GN=$4
 
 if [ -z "$ALGO" ]; then # if ALGO is not provided, set default
-    ALGO="DDPG"
+    ALGO="DQN"
 fi
 if [ -z "$MODEL" ]; then # if MODEL is not provided, set default
     MODEL=null
@@ -19,31 +19,30 @@ if [ -z "$USE_WANDB" ]; then # if ALGO is not provided, set default
     USE_WANDB=false
 fi
 if [ -z "$GN" ]; then # if ALGO is not provided, set default
-    GN="null"
+    GN="DQN"
 fi
 
-ENVS=classic
-ENV_NAME=Pendulum-v1
-total_training_steps=30000
-eval_interval=300
-eval_episodes=10
+ENVS=grid
+ENV_NAME=Bridge
+total_training_steps=100000
+eval_interval=1000
+eval_episodes=1
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 eval_log_interval=10000
-e_greedy_type=exponential
-e_decay=3000
+e_greedy_type="linear"
+e_decay=80000
 use_image=false
 lr=0.005
-use_step_rate=true
 use_hard_update=false
 hidden_dim=128
-buffer_size=30000
+buffer_size=100000
 batch_size=64
 save_dir=null  #"./models/${ENV_NAME}/"
 save_interval=10000
 use_geo_e_greedy=true
-geo_p=0.5
+geo_p=0.3
 alpha=0.01
-uncertainty_factor=2.0
+uncertainty_factor=-2.0
 
 EXTRA_ARGS=()
 
@@ -56,7 +55,7 @@ if [ "$ALGO" != "null" ]; then
 fi
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
-    EXTRA_ARGS+=("algos.models.max_repetition=20")
+    EXTRA_ARGS+=("algos.models.max_repetition=10")
 fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
@@ -78,7 +77,6 @@ do
         "total_training_steps=$total_training_steps"
         "eval_interval=$eval_interval"
         "eval_episodes=$eval_episodes"
-        "use_step_rate=$use_step_rate"
         "save_dir=$save_dir"
         "save_interval=$save_interval"
         "common_args.e_greedy_type=$e_greedy_type"

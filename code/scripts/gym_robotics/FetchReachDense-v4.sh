@@ -23,21 +23,25 @@ if [ -z "$GN" ]; then # if ALGO is not provided, set default
     GN="DDPG"
 fi
 
-ENVS=classic
+ENVS=robotics
 ENV_NAME=FetchReachDense-v4
-total_training_steps=200000
+total_training_steps=100000
 eval_interval=1000
 eval_episodes=10
 video_save_dir=./videos/${ENV_NAME}/algo_${ALGO}/model_${MODEL}/
 use_dueling=false
-e_decay=20000 #  standard: total_training_steps * 0.1
+e_decay=10000 #  standard: total_training_steps * 0.1
 use_step_rate=true
 use_image=false
 lr=0.0005
 use_lr_decay=true
-use_hard_update=false
 hidden_dim=256
+batch_size=64
+buffer_size=100000
 use_geo_e_greedy=true
+geo_p=0.5
+alpha=0.01
+uncertainty_factor=-2.0
 
 EXTRA_ARGS=()
 
@@ -49,7 +53,13 @@ if [ "$ALGO" != "null" ]; then
 fi
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
-    EXTRA_ARGS+=("algos.models.max_repetition=5")
+    EXTRA_ARGS+=("algos.models.max_repetition=10")
+fi
+if [ "$MODEL" == "EQL" ]; then
+    EXTRA_ARGS+=("algos.models.alpha=$alpha")
+fi
+if [ "$MODEL" == "UTE" ]; then
+    EXTRA_ARGS+=("algos.models.uncertainty_factor=$uncertainty_factor")
 fi
 if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs=$ENVS")
@@ -73,6 +83,8 @@ do
         "common_args.use_lr_decay=$use_lr_decay"
         "common_args.use_hard_update=$use_hard_update"
         "common_args.hidden_dim=$hidden_dim"
+        "common_args.buffer_size=$buffer_size"
+        "common_args.batch_size=$batch_size"
         "common_args.use_geo_e_greedy=$use_geo_e_greedy"
         "${EXTRA_ARGS[@]}"
     )

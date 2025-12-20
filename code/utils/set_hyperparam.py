@@ -76,6 +76,7 @@ def set_hyperparam(
         model_name: str = model_args.model_name
         max_repetition: int = model_args.max_repetition
         use_geo_e_greedy: bool = hyper_args.use_geo_e_greedy
+        geo_p: float = hyper_args.geo_p
         if model_name == "TempoRL":
             model_config = {
                 "max_repetition": max_repetition,
@@ -85,6 +86,7 @@ def set_hyperparam(
                 "min_epsilon": min_epsilon,
                 "use_dueling": use_dueling,
                 "use_geo_e_greedy": use_geo_e_greedy,
+                "geo_p": geo_p,
             }
         elif model_name == "UTE":
             model_config = {
@@ -97,6 +99,7 @@ def set_hyperparam(
                 "num_ensemble": model_args.num_ensemble,
                 "uncertainty_factor": model_args.uncertainty_factor,
                 "use_geo_e_greedy": use_geo_e_greedy,
+                "geo_p": geo_p,
             }
         elif model_name == "EQL":
             model_config = {
@@ -111,6 +114,7 @@ def set_hyperparam(
                 "sigma": model_args.continuous.sigma,
                 "n_sample": model_args.continuous.n_sample,
                 "use_geo_e_greedy": use_geo_e_greedy,
+                "geo_p": geo_p,
             }
         else:
             raise NotImplementedError(f"Model {model_name} is not supported.")

@@ -104,50 +104,39 @@ class GridCore(gym.Env):
 
         # colors
         color_map = {
-            ".": (255, 255, 255),    # white (Path)
-            "S": (0, 150, 0),        # dark green (Start)
-            "G": (0, 0, 200),        # blue (Goal)
-            "X": (200, 0, 0),        # red (Pits/Cliff)
+            ".": (255, 255, 255),    
+            "S": (0, 150, 0),        
+            "G": (0, 0, 200),        
+            "X": (200, 0, 0),        
         }
-        grid_line_color = (200, 200, 200) # light gray for grid lines
+        grid_line_color = (200, 200, 200)
         line_thickness = 1
 
         # build grid
         grid = np.full(self.shape, ".", dtype=object)
 
-        # mark static start (S) - 녹색
         sx, sy = self.start
         grid[sx, sy] = "S"
 
-        # pits (X) - 빨간색
         pits = getattr(self, "pits", [])
         for p in pits:
             pit_coord = np.unravel_index(p, self.shape)
             grid[pit_coord] = "X"
 
-        # goal (G) - 파란색
         gx, gy = self.goal
         grid[gx, gy] = "G"
 
         ax, ay = np.unravel_index(self.prev_s, self.shape) 
 
-        # ------------------------------------------------------------------
-        # 1. Draw cells (Background colors)
-        # ------------------------------------------------------------------
         for i in range(H):
             for j in range(W):
                 cell_type = grid[i, j]
-                # 에이전트가 밟고 있는 셀은 해당 맵 기호의 색상을 유지합니다.
                 c = color_map[cell_type]
                 
                 # 셀 영역 칠하기
                 img[i*cell_size:(i+1)*cell_size,
                     j*cell_size:(j+1)*cell_size] = c
 
-        # ------------------------------------------------------------------
-        # 2. Draw grid lines
-        # ------------------------------------------------------------------
-        # 수평선 그리기
         for i in range(1, H):
             start_y = i * cell_size
             img[start_y - line_thickness//2 : start_y + line_thickness//2 + 1, :] = grid_line_color
@@ -157,11 +146,6 @@ class GridCore(gym.Env):
             start_x = j * cell_size
             img[:, start_x - line_thickness//2 : start_x + line_thickness//2 + 1] = grid_line_color
 
-
-        # ------------------------------------------------------------------
-        # 3. Draw black circle on agent cell
-        # ------------------------------------------------------------------
-        # 공은 에이전트의 현재 위치 (ax, ay)에만 그려집니다.
         cx = ax * cell_size + cell_size // 2    # center x
         cy = ay * cell_size + cell_size // 2    # center y
         radius = cell_size // 4                 # radius of circle

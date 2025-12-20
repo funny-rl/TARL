@@ -27,19 +27,22 @@ ENV_NAME=CliffWalking
 total_training_steps=100000
 eval_interval=1000
 eval_episodes=1
-video_save_dir=./videos/${ENV_NAME}/algo_${ALGO}/model_${MODEL}/
+video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 eval_log_interval=10000
 e_greedy_type="linear"
-e_decay=90000
+e_decay=80000
 use_image=false
 lr=0.005
 use_hard_update=false
-hidden_dim=256
+hidden_dim=128
 buffer_size=100000
 batch_size=64
 save_dir=null  #"./models/${ENV_NAME}/"
 save_interval=10000
-
+use_geo_e_greedy=true
+geo_p=0.3
+alpha=0.01
+uncertainty_factor=-2.0
 
 EXTRA_ARGS=()
 
@@ -52,7 +55,13 @@ if [ "$ALGO" != "null" ]; then
 fi
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
-    EXTRA_ARGS+=("algos.models.max_repetition=15")
+    EXTRA_ARGS+=("algos.models.max_repetition=11")
+fi
+if [ "$MODEL" == "EQL" ]; then
+    EXTRA_ARGS+=("algos.models.alpha=$alpha")
+fi
+if [ "$MODEL" == "UTE" ]; then
+    EXTRA_ARGS+=("algos.models.uncertainty_factor=$uncertainty_factor")
 fi
 if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs=$ENVS")
@@ -78,6 +87,8 @@ do
         "common_args.hidden_dim=$hidden_dim"
         "common_args.buffer_size=$buffer_size"
         "common_args.batch_size=$batch_size"
+        "common_args.use_geo_e_greedy=$use_geo_e_greedy"
+        "common_args.geo_p=$geo_p"
         "${EXTRA_ARGS[@]}"
     )
     python main.py "${ARGS[@]}"

@@ -257,7 +257,8 @@ def eval(
         frames: list[Any] = []
         episode_reward: float = 0.0
         epi_repetition: list[int] = []
-        state, _ = eval_env.reset(seed=seed + 100 * ep)
+        test_seed=seed + 100 * ep
+        state, _ = eval_env.reset(seed = test_seed)
         eval_step = 0
         eval_log: list[dict[str, Any]] = []
 
@@ -311,12 +312,16 @@ def eval(
     if use_eval_render and (training_steps % log_eval_interval == 0):
         save_dir = os.path.join(video_save_dir, str(training_steps))
         os.makedirs(save_dir, exist_ok=True)
-        video_path = f"{save_dir}/test.mp4"
-        
+
+        video_path = f"{save_dir}/{test_seed}/test.mp4"
+        log_path = f"{save_dir}/{test_seed}/eval_log.json"
+
+        os.makedirs(os.path.dirname(video_path), exist_ok=True)
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
         imageio.mimsave(video_path, best_frames, fps=30)
         print(f"Saved evaluation video at {video_path}")
-
-        log_path = f"{save_dir}/eval_log.json"
+        
         with open(log_path, 'w') as f:
             json.dump(best_log, f, indent=4)
             print(f"Saved evaluation log at {log_path}")
@@ -324,6 +329,7 @@ def eval(
     avg_reward: float = np.mean(total_rewards)
     avg_repetition: float = np.mean(eval_repetition)
     std_repetition: float = np.std(eval_repetition)
+    
     if use_wandb:
         wandb.log(
             {

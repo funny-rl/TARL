@@ -27,7 +27,7 @@ ENVS=robotics
 ENV_NAME=PointMaze_Medium_Diverse_GRDense-v3
 total_training_steps=500000
 eval_interval=5000
-eval_episodes=5
+eval_episodes=10
 video_save_dir=./videos/${ENV_NAME}/algo_${ALGO}/model_${MODEL}/
 use_dueling=false
 e_decay=30000 #  standard: total_training_steps * 0.1
@@ -37,9 +37,12 @@ lr=0.0005
 use_lr_decay=false
 use_hard_update=true
 hidden_dim=512
+buffer_size=100000
+batch_size=64
 use_geo_e_greedy=true
-buffer_size=80000
-batch_size=128
+geo_p=0.5
+alpha=0.01
+uncertainty_factor=-2.0
 
 EXTRA_ARGS=()
 
@@ -51,7 +54,13 @@ if [ "$ALGO" != "null" ]; then
 fi
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
-    EXTRA_ARGS+=("algos.models.max_repetition=50")
+    EXTRA_ARGS+=("algos.models.max_repetition=25")
+fi
+if [ "$MODEL" == "EQL" ]; then
+    EXTRA_ARGS+=("algos.models.alpha=$alpha")
+fi
+if [ "$MODEL" == "UTE" ]; then
+    EXTRA_ARGS+=("algos.models.uncertainty_factor=$uncertainty_factor")
 fi
 if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs=$ENVS")
@@ -79,6 +88,8 @@ do
         "common_args.use_geo_e_greedy=$use_geo_e_greedy"
         "common_args.buffer_size=$buffer_size"
         "common_args.batch_size=$batch_size"
+        "common_args.use_geo_e_greedy=$use_geo_e_greedy"
+        "common_args.geo_p=$geo_p"
         "${EXTRA_ARGS[@]}"
     )
     python main.py "${ARGS[@]}"

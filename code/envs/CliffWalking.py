@@ -25,4 +25,3 @@ class CliffWalking(FallEnv):
             goal=goal,
             max_steps=1000
         )
-        pass

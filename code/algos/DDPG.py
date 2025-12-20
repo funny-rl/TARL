@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from copy import deepcopy
 
 from ._modules import Continuous_Q_Actor, Continuous_Q_Critic

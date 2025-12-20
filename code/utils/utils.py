@@ -89,6 +89,8 @@ def action_transform(
             action_tensor = action_tensor.float()
             if action_tensor.dim() == 1:
                 action_tensor = action_tensor.unsqueeze(0)
+            elif action_tensor.dim() == 2:
+                pass
             else:
                 raise ValueError(f"Not supported action shape: {action_tensor.shape} for discrete action space.")
                 

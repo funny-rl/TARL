@@ -22,7 +22,8 @@ class EQL:
         fixed_coeff,
         sigma,
         n_sample,
-        use_geo_e_greedy
+        use_geo_e_greedy,
+        geo_p
     ):
         self.base_agent = base_agent
         self.state_dim: int = base_agent.state_dim
@@ -42,7 +43,7 @@ class EQL:
         self.max_repetition: int = max_repetition
         self.n_sample: int = n_sample
 
-        self.p = torch.tensor(0.5)
+        self.geo_p = geo_p
         self.sigma = sigma  
         self.lr: float = base_agent.lr  
         self.initial_lr: float = base_agent.initial_lr
@@ -101,7 +102,7 @@ class EQL:
         else: 
             training_steps = torch.tensor(training_steps, dtype=torch.float32)
             if self.e_greedy_type == "linear":
-                self.epsilon = self.max_epsilon - (self.max_epsilon - self.min_epsilon) * torch.clamp(self.e_decay - training_steps, 0.0, 1.0).item()
+                self.epsilon = self.max_epsilon - (self.max_epsilon - self.min_epsilon) * torch.clamp(training_steps / self.e_decay, 0.0, 1.0).item()
             elif self.e_greedy_type == "exponential":
                 self.epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * torch.exp(-1.0 * training_steps / self.e_decay).item()
             else:
@@ -137,6 +138,7 @@ class EQL:
             repetitions = eps_rep_selection(
                 self.max_repetition,
                 self.use_geo_e_greedy,
+                torch.tensor(self.geo_p)
             )
 
         return repetitions
@@ -189,62 +191,34 @@ class EQL:
         
         rep_idx = reps.long() - 1
 
-        self.beta_epsilon = self.epsilon
         if not self.fixed_coeff:
             self.expl_alpha = max(self.alpha, self.epsilon)
         else:
             self.expl_alpha = self.alpha
 
         with torch.no_grad():
-            if self.use_geo_e_greedy:
-                rep_ks = torch.arange(1, self.max_repetition + 1, device=self.device)
-                pmf = self.p * (1 - self.p) ** (rep_ks - 1)
-                Z = (1 - (1 - self.p) ** self.max_repetition)
-                pmf = (pmf / Z).unsqueeze(0).repeat(self.batch_size, 1)
-            
             if self.n_actions is not None:
                 next_qs = self.base_agent.target_Actor(next_states) 
                 max_q = torch.max(next_qs, dim=-1, keepdim=True)[0]
-                Rs = 0.0
-                if self.beta_epsilon > 0:
-                    for idx in range(self.n_actions):
-                        next_actions = torch.full((self.batch_size, 1), idx, dtype=torch.long)
-                        next_actions = action_transform(next_actions, self.n_actions, self.device)
+                mean_q = torch.mean(next_qs, dim=-1, keepdim=True)  
 
-                        rep_q_values = self.target_Rep_Actor(next_states, next_actions)
-                        
-                        max_rep_q = torch.max(rep_q_values, dim=-1, keepdim=True)[0]
-
-                        if self.use_geo_e_greedy:
-                            mean_rep_q = torch.sum(rep_q_values * pmf, dim=-1, keepdim=True)
-                        else:
-                            mean_rep_q = torch.mean(rep_q_values, dim=-1, keepdim=True)
-                        
-                        p = (1 - self.beta_epsilon) * max_rep_q + self.beta_epsilon * mean_rep_q
-                        Rs += p / self.n_actions
-                else:
-                    Rs = next_qs.mean(dim=-1, keepdim=True)
             else:
                 next_actions = self.base_agent.target_Actor(next_states)
-                max_q = self.base_agent.target_Critic(
+                rep_q_values = self.base_agent.target_Critic(
                     torch.cat([next_states, next_actions], dim=-1)
                 )
-                Rs = 0.0
+                max_q = torch.max(rep_q_values, dim=-1, keepdim=True)[0]
                 noises = (torch.randn(self.n_sample, self.batch_size, self.action_dim) * self.sigma).to(self.device)
+                mean_q = 0.0
                 for noise in noises:
                     noisy_next_actions = (next_actions + noise).clamp(-self.max_action, self.max_action)
-                    rep_q_values = self.target_Rep_Actor(next_states, noisy_next_actions)
-                    max_rep_q = torch.max(rep_q_values, dim=-1, keepdim=True)[0]
-                    if self.use_geo_e_greedy:
-                        mean_rep_q = torch.sum(rep_q_values * pmf, dim=-1, keepdim=True)
-                    else:
-                        mean_rep_q = torch.mean(rep_q_values, dim=-1, keepdim=True)
-                    
-                    p = (1 - self.beta_epsilon) * max_rep_q + self.beta_epsilon * mean_rep_q
-                    Rs += p / self.n_sample
+                    rep_q_values = self.base_agent.target_Critic(
+                        torch.cat([next_states, noisy_next_actions], dim=-1)
+                    )
+                    mean_rep_q = torch.mean(rep_q_values, dim=-1, keepdim=True)
+                    mean_q += mean_rep_q / self.n_sample
                 
-                
-            next_q_values = (1 - self.expl_alpha) * max_q + self.expl_alpha * Rs 
+            next_q_values = (1 - self.expl_alpha) * max_q + self.expl_alpha * mean_q 
             target_Q = rewards + not_dones * (self.gamma ** reps) * next_q_values
         
         actions =action_transform(actions, self.n_actions, self.device)

@@ -1,7 +1,7 @@
 model_name: EQL
 
 max_repetition: 10
-alpha: 0.1 # same value with beta, so we use only alpha
+alpha: 0.1
 fixed_coeff: false
 continuous: # only for continuous action space
   sigma: 0.1  

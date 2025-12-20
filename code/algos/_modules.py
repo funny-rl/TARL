@@ -465,7 +465,6 @@ class Ensemble_DQN(nn.Module):
         return torch.stack(outputs, dim=0)
     
 
-
 def eps_rep_selection(
     max_repetition: int,
     use_geo_e_greedy: bool = False,

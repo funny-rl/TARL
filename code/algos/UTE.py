@@ -19,7 +19,8 @@ class UTE:
         use_dueling,
         num_ensemble,
         uncertainty_factor,
-        use_geo_e_greedy
+        use_geo_e_greedy,
+        geo_p
     ):
         self.base_agent = base_agent
         self.state_dim: int = base_agent.state_dim
@@ -38,7 +39,8 @@ class UTE:
         self.max_repetition: int = max_repetition
         self.num_ensemble: int = num_ensemble
         
-        self.lr: float = base_agent.lr  
+        self.geo_p: float = geo_p
+        self.lr: float = base_agent.lr
         self.initial_lr: float = base_agent.initial_lr
         self.final_lr: float = base_agent.final_lr
         self.tau: float = base_agent.tau
@@ -96,7 +98,7 @@ class UTE:
         else: 
             training_steps = torch.tensor(training_steps, dtype=torch.float32)
             if self.e_greedy_type == "linear":
-                self.epsilon = self.max_epsilon - (self.max_epsilon - self.min_epsilon) * torch.clamp(self.e_decay - training_steps, 0.0, 1.0).item()
+                self.epsilon = self.max_epsilon - (self.max_epsilon - self.min_epsilon) * torch.clamp(training_steps / self.e_decay, 0.0, 1.0).item()
             elif self.e_greedy_type == "exponential":
                 self.epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * torch.exp(-1.0 * training_steps / self.e_decay).item()
             else:
@@ -127,7 +129,7 @@ class UTE:
                 
                 mean_q_values = torch.mean(repetition_q_values, dim=0)
                 std_q_values = torch.std(repetition_q_values, dim=0)
-                
+
                 rep_Qs = mean_q_values + self.uncertainty_factor * std_q_values
                 repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
             if deterministic:
@@ -137,6 +139,7 @@ class UTE:
             repetitions = eps_rep_selection(
                 self.max_repetition,
                 self.use_geo_e_greedy,
+                torch.tensor(self.geo_p)
             )
 
         return repetitions

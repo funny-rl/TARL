@@ -17,7 +17,8 @@ class TempoRL:
         max_epsilon,    
         min_epsilon,
         use_dueling,
-        use_geo_e_greedy
+        use_geo_e_greedy,
+        geo_p
     ):
         self.base_agent = base_agent
         self.state_dim: int = base_agent.state_dim
@@ -39,6 +40,7 @@ class TempoRL:
         self.initial_lr: float = base_agent.initial_lr
         self.final_lr: float = base_agent.final_lr
         
+        self.geo_p: float = geo_p
         self.tau: float = base_agent.tau
         self.gamma: float = base_agent.gamma
         self.epsilon: float = max_epsilon
@@ -84,7 +86,7 @@ class TempoRL:
             action_dim=self.action_dim,
             device=self.device
         )
-        
+
     def epsilon_decay(self, training_steps):
         if hasattr(self.base_agent, "epsilon_decay"):
             self.base_agent.epsilon_decay(training_steps)
@@ -92,7 +94,7 @@ class TempoRL:
         else: 
             training_steps = torch.tensor(training_steps, dtype=torch.float32)
             if self.e_greedy_type == "linear":
-                self.epsilon = self.max_epsilon - (self.max_epsilon - self.min_epsilon) * torch.clamp(self.e_decay - training_steps, 0.0, 1.0).item()
+                self.epsilon = self.max_epsilon - (self.max_epsilon - self.min_epsilon) * torch.clamp(training_steps / self.e_decay, 0.0, 1.0).item()
             elif self.e_greedy_type == "exponential":
                 self.epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * torch.exp(-1.0 * training_steps / self.e_decay).item()
             else:
@@ -127,6 +129,7 @@ class TempoRL:
             repetitions = eps_rep_selection(
                 self.max_repetition,
                 self.use_geo_e_greedy,
+                torch.tensor(self.geo_p)
             )
 
         return repetitions

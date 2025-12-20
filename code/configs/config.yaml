@@ -37,3 +37,4 @@ common_args:
   hidden_dim: 512
   use_dueling: false
   use_geo_e_greedy: false
+  geo_p: 0.5
