@@ -1,0 +1,7 @@
+Model,AUC Score
+DDPG,0.872
+EQL_geo05,0.866
+EQL_uniform,0.858
+UTE_2,0.745
+TempoRL,0.739
+UTE_-2,0.724

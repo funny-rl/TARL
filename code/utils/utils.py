@@ -105,3 +105,16 @@ def action_transform(
         raise ValueError("Unsupported action type.")
     
     return action_tensor.to(device)
+
+
+def reward_transform(
+    reward: float, 
+    use_log_reward: bool
+) -> float:
+    """Transform the reward based on whether log reward is used."""
+    if use_log_reward:
+        assert reward > 0, "Reward must be greater than 0.0 for log transformation."
+        return float(np.log(reward))
+
+    else:
+        return reward

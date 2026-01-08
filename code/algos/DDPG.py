@@ -22,6 +22,7 @@ class DDPG:
         update_interval,
         tau,
         expl_noise,
+        use_act_skip_buf,
         device
     ):
         self.state_dim: int = state_dim
@@ -46,6 +47,7 @@ class DDPG:
         self.use_image: bool = use_image
         self.use_lr_decay: bool = use_lr_decay
         self.use_hard_update: bool = use_hard_update
+        self.use_act_skip_buf: bool = use_act_skip_buf
         
         self.Actor = Continuous_Q_Actor(
             self.state_dim,

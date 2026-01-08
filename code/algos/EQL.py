@@ -6,24 +6,25 @@ import torch.optim as optim
 from utils.utils import action_transform
 
 from .buffer.repetition_buffer import SkipBuffer
-from ._modules import Rep_DuelDQN, Rep_DQN, eps_rep_selection
+from ._modules import Rep_DQN
 
 class EQL:
     def __init__(
         self,
         base_agent,
+        rep_batch_size,
+        rep_buffer_size,
         max_repetition,
         e_greedy_type,
         e_decay,
         max_epsilon,
         min_epsilon,
-        use_dueling,
         alpha,
         fixed_coeff,
         sigma,
         n_sample,
-        use_geo_e_greedy,
-        geo_p
+        use_act_skip_buf,
+        prev_buffer_save
     ):
         self.base_agent = base_agent
         self.state_dim: int = base_agent.state_dim
@@ -35,15 +36,14 @@ class EQL:
             self.n_actions = None
             self.max_action = base_agent.max_action
         
-        self.buffer_size: int = base_agent.buffer_size
-        self.batch_size: int = base_agent.batch_size
+        self.rep_buffer_size: int = rep_buffer_size
+        self.rep_batch_size: int = rep_batch_size
         self.hidden_dim: int = base_agent.hidden_dim
         self.update_interval: int = base_agent.update_interval
         self.e_decay: int = e_decay
         self.max_repetition: int = max_repetition
         self.n_sample: int = n_sample
 
-        self.geo_p = geo_p
         self.sigma = sigma  
         self.lr: float = base_agent.lr  
         self.initial_lr: float = base_agent.initial_lr
@@ -59,39 +59,30 @@ class EQL:
         self.device: str = base_agent.device
         
         self.use_image: bool = base_agent.use_image
-        self.use_dueling: bool = use_dueling
         self.use_lr_decay: bool = base_agent.use_lr_decay
         self.use_hard_update: bool = base_agent.use_hard_update
-        self.use_geo_e_greedy: bool = use_geo_e_greedy
         self.fixed_coeff: bool = fixed_coeff
+        self.use_act_skip_buf: bool = use_act_skip_buf
         
-        if self.use_dueling:
-            self.Rep_Actor = Rep_DuelDQN(
-                self.state_dim,
-                self.action_dim,
-                self.hidden_dim,
-                self.max_repetition,
-                self.use_image,
-                self.n_actions
-            ).to(self.device)
-        else:
-            self.Rep_Actor = Rep_DQN(
-                self.state_dim,
-                self.action_dim,
-                self.hidden_dim,
-                self.max_repetition,
-                self.use_image,
-                self.n_actions
-            ).to(self.device)
+        self.Rep_Actor = Rep_DQN(
+            self.state_dim,
+            self.action_dim,
+            self.hidden_dim,
+            self.max_repetition,
+            self.use_image,
+            self.n_actions
+        ).to(self.device)
         
         self.target_Rep_Actor = deepcopy(self.Rep_Actor).to(self.device)
         self.loss_fn = nn.SmoothL1Loss()
         self.Rep_Actor_optimizer = optim.Adam(self.Rep_Actor.parameters(), lr=self.lr)
         self.loss_func = nn.SmoothL1Loss()
         self.rep_replay_buffer = SkipBuffer(
-            buffer_size=self.buffer_size,
+            buffer_size=self.rep_buffer_size,
             state_dim=self.state_dim,
             action_dim=self.action_dim,
+            gamma=self.gamma,
+            prev_buffer_save=prev_buffer_save,
             device=self.device
         )
         
@@ -135,47 +126,32 @@ class EQL:
                 return repetitions, rep_Qs
 
         else:
-            repetitions = eps_rep_selection(
-                self.max_repetition,
-                self.use_geo_e_greedy,
-                torch.tensor(self.geo_p)
-            )
+            repetitions = torch.randint(1, self.max_repetition + 1, (1,)).item()
 
         return repetitions
 
     def add(
         self,
-        state,
-        action,
-        reward,
-        next_state,
-        done,
         skip_states,
-        skip_rewards
+        action,
+        skip_rewards,
+        skip_dones,
+        next_skip_states,
+        repetition
     ):
-        self.base_agent.add(
-            state,
-            action,
-            reward,
-            next_state,
-            done
+        self.rep_replay_buffer = self.rep_replay_buffer.transform(
+            skip_states = skip_states,
+            action = action,
+            skip_rewards = skip_rewards,
+            skip_dones = skip_dones,
+            next_skip_states = next_skip_states,
+            repetition = repetition,
+            buffer = self.rep_replay_buffer
         )
-        
-        for idx, start_state in enumerate(skip_states):
-            skip_reward = 0
-            skip_step = 0
-            for exp, r in enumerate(skip_rewards[idx:]):
-                skip_reward += (self.gamma ** exp) * r
-                skip_step += 1
-
-            self.rep_replay_buffer.add(
-                state = start_state,
-                action = action,
-                repetition = skip_step,
-                reward = skip_reward,
-                next_state = next_state,
-                done = done
-            ) 
+        if self.use_act_skip_buf:
+            self.base_agent.add_skip_buffer(
+                buffer = self.rep_replay_buffer
+            )
     
     def update(self, training_steps: int) -> dict:
         log_dict = self.base_agent.update(training_steps)
@@ -187,7 +163,7 @@ class EQL:
             rewards, 
             next_states, 
             not_dones
-        ) = self.rep_replay_buffer.sample(self.batch_size)
+        ) = self.rep_replay_buffer.sample(self.rep_batch_size)
         
         rep_idx = reps.long() - 1
 
@@ -208,7 +184,7 @@ class EQL:
                     torch.cat([next_states, next_actions], dim=-1)
                 )
                 max_q = torch.max(rep_q_values, dim=-1, keepdim=True)[0]
-                noises = (torch.randn(self.n_sample, self.batch_size, self.action_dim) * self.sigma).to(self.device)
+                noises = (torch.randn(self.n_sample, self.rep_batch_size, self.action_dim) * self.sigma).to(self.device)
                 mean_q = 0.0
                 for noise in noises:
                     noisy_next_actions = (next_actions + noise).clamp(-self.max_action, self.max_action)

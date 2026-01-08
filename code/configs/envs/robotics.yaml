@@ -2,3 +2,4 @@ env_name: null
 env_type: robotics
 
 max_episode_steps: 50
+use_log_reward: false

@@ -16,7 +16,8 @@ from utils.utils import (
     set_seed, 
     episode_stats, 
     state_transform,
-    action_transform
+    action_transform,
+    reward_transform
 )
 from utils.build_env import build_env, get_env_info
 from utils.set_hyperparam import set_hyperparam
@@ -37,10 +38,10 @@ def main(args):
     use_wandb: bool = args.use_wandb
     use_step_rate: bool = args.use_step_rate
     use_lr_decay: bool = common_args.use_lr_decay
+    use_act_skip_buf: bool = common_args.use_act_skip_buf
     use_eval_render: bool = True if args.video_save_dir is not None else False
-    save_model: bool = True if args.save_dir is not None else False
-    
-    algo_name: str = algo_args.algo_name    
+    save_model: bool = args.save_model
+    algo_name: str = algo_args.algo_name
     env_name: str = env_args.env_name if env_args is not None else None
     video_save_dir: str = args.video_save_dir
     model_name: str = model_args.model_name if model_args is not None else None
@@ -61,6 +62,8 @@ def main(args):
     
     env = build_env(env_args)
     env_info = get_env_info(env_args, env, use_step_rate)
+
+    use_log_reward: bool = env_info.get("use_log_reward", False)
     
     OmegaConf.set_struct(common_args, False)
     OmegaConf.set_struct(algo_args, False)
@@ -82,14 +85,6 @@ def main(args):
     else:
         rep_agent = MODEL_REGISTRY[model_name](base_agent, **model_config)
         
-    if use_wandb:
-        wandb.init(
-            project=env_name, 
-            name=f"{algo_name}_{model_name}_{env_name}_{seed}",
-            group=args.group_name,
-            config=OmegaConf.to_container(args, resolve=True),
-        )
-        
     state, _ =  env.reset()
     
     episode_stats_dict: dict[str, Any] = {
@@ -104,14 +99,32 @@ def main(args):
         "critic_loss": [],
     }
     
+    has_base_agent: bool = hasattr(rep_agent, "base_agent")
+    use_adaptive_lambda = getattr(rep_agent, "use_adaptive_uncertainty", False)
+    
+    assert has_base_agent or not use_act_skip_buf, "Action skip buffer can be used only when there is a base agent."
+    if use_adaptive_lambda:
+        assert hasattr(rep_agent, "ucb"), "Adaptive repetition lambda requires UCB Algorithms."
+    
+    if use_wandb:
+        wandb.init(
+            project=env_name, 
+            name=f"{algo_name}_{model_name}_{env_name}_{seed}",
+            group=args.group_name,
+            config=OmegaConf.to_container(args, resolve=True),
+        )
+    
     while training_steps <= total_training_steps:
         with episode_stats(episode_stats_dict) as log: 
             done = False
             state = state_transform(state, use_step_rate, env, device)
+            if use_adaptive_lambda:
+                rep_agent.adaptive_lambda()
+                
             while not done:
                 train = training_steps >= warmup_steps
                 if train:
-                    action = base_agent.select_action(state)
+                    action = rep_agent.select_action(state)
                     repetition = rep_agent.select_repetition(
                         state,
                         action_transform(
@@ -125,8 +138,17 @@ def main(args):
                     repetition = rep_agent.select_repetition(state)
 
                 log["repetition"].append(repetition)
-                
-                skip_states, skip_rewards = [], []
+
+                (
+                    skip_states, 
+                    skip_rewards, 
+                    skip_dones, 
+                    next_skip_states
+                ) = [], [], [], []
+
+                if env_info.get("int_action", None) is not None:
+                    action = int(action.item())
+                    
                 for _ in range(repetition):
                     (
                         next_state, 
@@ -135,21 +157,34 @@ def main(args):
                         truncated, 
                         _
                     ) = env.step(action)
+                    reward = reward_transform(reward, use_log_reward)
                     done: bool = terminated or truncated
                     next_state = state_transform(next_state, use_step_rate, env, device)
                     log["episode_reward"] += float(reward)
+
                     skip_states.append(state)
                     skip_rewards.append(reward)
-                    
-                    rep_agent.add(
-                        state.cpu(),
-                        action,
-                        reward,
-                        next_state.cpu(),
-                        done,
-                        skip_states,
-                        skip_rewards
-                    )
+                    skip_dones.append(done)
+                    next_skip_states.append(next_state)
+
+                    if not use_act_skip_buf:
+                        if has_base_agent:
+                            rep_agent.base_agent.add(
+                                state = state.cpu(),
+                                action = action,
+                                reward = reward,
+                                next_state = next_state.cpu(),
+                                done = done,
+                            )
+                        else:
+                            rep_agent.add(
+                                state = state.cpu(),
+                                action = action,
+                                reward = reward,
+                                next_state = next_state.cpu(),
+                                done = done,
+                            )
+
                     state = next_state
                     
                     if train:
@@ -181,6 +216,14 @@ def main(args):
                         rep_agent.save_model(save_dir)
                         print(f"Saved model at {save_dir}")
 
+                    if use_adaptive_lambda:
+                        rep_agent.ucb_datas.append(
+                            (
+                                rep_agent.j, 
+                                reward
+                            )
+                        )
+                    
                     if hasattr(rep_agent, "epsilon_decay"):
                         rep_agent.epsilon_decay(
                             max(training_steps - warmup_steps, 0.0),
@@ -202,7 +245,7 @@ def main(args):
                         if hasattr(rep_agent, "expl_alpha"):
                             log["alpha"] = rep_agent.expl_alpha
                         
-                        msg = f"Training steps: {training_steps} | Episode: {num_episodes} | Rewards: {log['episode_reward']} | LR: {rep_agent.lr} "
+                        msg = f"Training steps: {training_steps} | Episode: {num_episodes} | Rewards: {log['episode_reward']} | LR: {rep_agent.lr} | {env_name} | Algo: {algo_name} | Model: {model_name}"
                         if hasattr(rep_agent, "epsilon"):
                             log["epsilon"] = rep_agent.epsilon
                             msg += f"| Epsilon: {rep_agent.epsilon}"
@@ -220,6 +263,20 @@ def main(args):
                             wandb.log(_log, step=training_steps)
                         break
                     training_steps += 1
+
+                if has_base_agent:
+                    rep_agent.add(
+                        skip_states,
+                        action,
+                        skip_rewards,
+                        skip_dones,
+                        next_skip_states,
+                        repetition
+                    )
+
+            if use_adaptive_lambda:
+                rep_agent.ucb.push_data(rep_agent.ucb_datas)
+
     env.close()
 
 def eval(
@@ -241,6 +298,8 @@ def eval(
     best_frames = None
     best_log = None
     best_reward = float("-inf")  
+
+    use_log_reward = env_info.get("use_log_reward", False)
     
     print("\n\nStarting Evaluation...\n")
     eval_env = build_env(
@@ -250,12 +309,13 @@ def eval(
 
     total_rewards: list[float] = []
     eval_repetition: list[int] = []
-    
+    eval_num_decision: list[int] = []    
     for ep in range(eval_episodes):
         start_time = time.time()
         done = False
         frames: list[Any] = []
         episode_reward: float = 0.0
+        num_decision: int = 0
         epi_repetition: list[int] = []
         test_seed=seed + 100 * ep
         state, _ = eval_env.reset(seed = test_seed)
@@ -274,8 +334,10 @@ def eval(
                 ),
                 deterministic=True
             )
+            
             epi_repetition.append(repetition)
-
+            num_decision += 1
+            
             eval_log.append({
                 "step": eval_step,
                 "state": state.cpu().numpy().tolist(),
@@ -286,12 +348,18 @@ def eval(
             
             for _ in range(repetition):
                 eval_step += 1
+                if env_info.get("int_action", None) is not None:
+                    action = int(action.item())
                 next_state, reward, terminated, truncated, _ = eval_env.step(action)
+                reward = reward_transform(reward, use_log_reward)
+                done: bool = terminated or truncated
+
                 if use_eval_render and (training_steps % log_eval_interval == 0):
                     frame = eval_env.render()
                     frames.append(frame)
+                
                 state = next_state
-                done: bool = terminated or truncated
+                
                 episode_reward += reward
                 if done:
                     break
@@ -308,6 +376,8 @@ def eval(
             best_log = eval_log.copy()
         total_rewards.append(episode_reward)
         eval_repetition.append(np.mean(epi_repetition))
+        eval_num_decision.append(num_decision)
+        
     
     if use_eval_render and (training_steps % log_eval_interval == 0):
         save_dir = os.path.join(video_save_dir, str(training_steps))
@@ -329,13 +399,15 @@ def eval(
     avg_reward: float = np.mean(total_rewards)
     avg_repetition: float = np.mean(eval_repetition)
     std_repetition: float = np.std(eval_repetition)
+    avg_decision: float = np.mean(eval_num_decision)
     
     if use_wandb:
         wandb.log(
             {
-                "eval/average_reward": avg_reward,
-                "eval/average_repetition": avg_repetition,
+                "eval/avg_reward": avg_reward,
+                "eval/avg_repetition": avg_repetition,
                 "eval/std_repetition": std_repetition,
+                "eval/avg_num_decision": avg_decision,
             },
             step=training_steps,
         )

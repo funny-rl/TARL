@@ -21,12 +21,19 @@ def set_hyperparam(
     use_image: bool = hyper_args.use_image 
     use_lr_decay: bool = hyper_args.use_lr_decay
     use_hard_update: bool = hyper_args.use_hard_update
+    use_act_skip_buf: bool = hyper_args.use_act_skip_buf
+    prev_buffer_save: bool = hyper_args.prev_buffer_save
     update_interval: int = hyper_args.update_interval
     tau: float = hyper_args.tau
     algo_name: str = hyper_args.algo_name
-    use_dueling: bool = hyper_args.use_dueling
     
-    if algo_name == "DQN":
+    if algo_name == "Random":
+        base_config = {
+            "n_actions": env_info["n_actions"],
+            "action_dim": env_info["action_dim"],
+            "max_action": env_info.get("max_action", None),
+        }
+    elif algo_name == "DQN":
         base_config: dict[str, Any] = {
             "state_dim": env_info["state_dim"],
             "action_dim": env_info["action_dim"],
@@ -45,12 +52,11 @@ def set_hyperparam(
             "use_hard_update": use_hard_update,
             "update_interval": update_interval,
             "tau": tau,
-            "use_dueling": use_dueling,
+            "use_act_skip_buf": use_act_skip_buf,
             "device": device
         }
     elif algo_name == "DDPG":
         assert use_image == False, "DDPG does not support image input."
-        assert use_dueling == False, "DDPG does not support dueling architecture."
         base_config: dict[str, Any] = {
             "state_dim": env_info["state_dim"],
             "action_dim": env_info["action_dim"],
@@ -66,6 +72,7 @@ def set_hyperparam(
             "update_interval": update_interval,
             "tau": tau,
             "expl_noise": hyper_args.expl_noise,
+            "use_act_skip_buf": use_act_skip_buf,
             "device": device
         }
     else:
@@ -75,46 +82,51 @@ def set_hyperparam(
     if model_args is not None:
         model_name: str = model_args.model_name
         max_repetition: int = model_args.max_repetition
-        use_geo_e_greedy: bool = hyper_args.use_geo_e_greedy
-        geo_p: float = hyper_args.geo_p
+        rep_batch_size: int = hyper_args.rep_batch_size
+        rep_buffer_size: int = hyper_args.rep_buffer_size
+
         if model_name == "TempoRL":
             model_config = {
+                "rep_batch_size": rep_batch_size,
+                "rep_buffer_size": rep_buffer_size,
                 "max_repetition": max_repetition,
                 "e_greedy_type": e_greedy_type,
                 "e_decay": e_decay,
                 "max_epsilon": max_epsilon,
                 "min_epsilon": min_epsilon,
-                "use_dueling": use_dueling,
-                "use_geo_e_greedy": use_geo_e_greedy,
-                "geo_p": geo_p,
+                "use_act_skip_buf": use_act_skip_buf,
+                "prev_buffer_save": prev_buffer_save,
             }
         elif model_name == "UTE":
             model_config = {
+                "rep_batch_size": rep_batch_size,
+                "rep_buffer_size": rep_buffer_size,
                 "max_repetition": max_repetition,
                 "e_greedy_type": e_greedy_type,
                 "e_decay": e_decay,
                 "max_epsilon": max_epsilon,
                 "min_epsilon": min_epsilon,
-                "use_dueling": use_dueling,
                 "num_ensemble": model_args.num_ensemble,
+                "use_adaptive_uncertainty": model_args.use_adaptive_uncertainty,
                 "uncertainty_factor": model_args.uncertainty_factor,
-                "use_geo_e_greedy": use_geo_e_greedy,
-                "geo_p": geo_p,
+                "use_act_skip_buf": use_act_skip_buf,
+                "prev_buffer_save": prev_buffer_save,
             }
         elif model_name == "EQL":
             model_config = {
+                "rep_batch_size": rep_batch_size,
+                "rep_buffer_size": rep_buffer_size,
                 "max_repetition": max_repetition,
                 "e_greedy_type": e_greedy_type,
                 "e_decay": e_decay,
                 "max_epsilon": max_epsilon,
                 "min_epsilon": min_epsilon,
-                "use_dueling": use_dueling,
                 "alpha": model_args.alpha,
                 "fixed_coeff": model_args.fixed_coeff,
                 "sigma": model_args.continuous.sigma,
                 "n_sample": model_args.continuous.n_sample,
-                "use_geo_e_greedy": use_geo_e_greedy,
-                "geo_p": geo_p,
+                "use_act_skip_buf": use_act_skip_buf,
+                "prev_buffer_save": prev_buffer_save,
             }
         else:
             raise NotImplementedError(f"Model {model_name} is not supported.")

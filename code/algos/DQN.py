@@ -5,7 +5,7 @@ import torch.nn.utils as nn_utils
 
 from copy import deepcopy
 
-from ._modules import QNet, DuelDQN
+from ._modules import QNet
 from .buffer.naive_buffer import NaiveReplayBuffer
 
 
@@ -30,7 +30,7 @@ class DQN:
         use_hard_update,
         update_interval,
         tau,
-        use_dueling,
+        use_act_skip_buf,
         device
     ):
         self.state_dim: int = state_dim
@@ -56,24 +56,16 @@ class DQN:
         self.use_image: bool = use_image
         self.device: str = device
         
-        self.use_dueling: bool = use_dueling
         self.use_lr_decay: bool = use_lr_decay
         self.use_hard_update: bool = use_hard_update
+        self.use_act_skip_buf: bool = use_act_skip_buf
         
-        if self.use_dueling:
-            self.Actor = DuelDQN(
-                self.state_dim,
-                self.n_actions,
-                self.hidden_dim,
-                self.use_image,
-            ).to(self.device)
-        else:
-            self.Actor = QNet(
-                self.state_dim, 
-                self.n_actions, 
-                self.hidden_dim,
-                self.use_image,
-            ).to(self.device)
+        self.Actor = QNet(
+            self.state_dim, 
+            self.n_actions, 
+            self.hidden_dim,
+            self.use_image,
+        ).to(self.device)
         
         self.Actor_optimizer = optim.Adam(
             self.Actor.parameters(), 
@@ -81,13 +73,14 @@ class DQN:
         )
         self.target_Actor = deepcopy(self.Actor).to(self.device)
         self.loss_func = nn.SmoothL1Loss()
-
-        self.replay_buffer = NaiveReplayBuffer(
-            buffer_size=self.buffer_size,
-            state_dim=self.state_dim,
-            action_dim=self.action_dim,
-            device=self.device
-        )
+        
+        if not use_act_skip_buf:
+            self.replay_buffer = NaiveReplayBuffer(
+                buffer_size=self.buffer_size,
+                state_dim=self.state_dim,
+                action_dim=1,
+                device=self.device
+            )
         
     def epsilon_decay(self, training_steps):
         training_steps = torch.tensor(training_steps, dtype=torch.float32)
@@ -135,31 +128,49 @@ class DQN:
         reward,
         next_state,
         done,
-        skip_states = None,
-        skip_rewards = None
     ):
         self.replay_buffer.add(
-            state,
-            action,
-            reward,
-            next_state,
-            done
+            state = state,
+            action = action,
+            reward = reward,
+            next_state = next_state,
+            done = done
         )
 
-    def update(self, training_steps: int) -> dict:
+    def add_skip_buffer(self, buffer):
+        self.replay_buffer = buffer
 
-        (
-            states, 
-            actions, 
-            rewards, 
-            next_states, 
-            not_dones,
-        ) = self.replay_buffer.sample(self.batch_size)
-        
-        with torch.no_grad():
-            next_q_values = torch.max(self.target_Actor(next_states), dim=-1, keepdim=True)[0]
-            target_q_values = rewards + self.gamma * not_dones * next_q_values
-        
+    def update(self, training_steps: int) -> dict:
+        if self.use_act_skip_buf:
+            (
+                states, 
+                actions, 
+                reps,
+                rewards, 
+                next_states, 
+                not_dones,
+            ) = self.replay_buffer.sample(self.batch_size)
+            
+            with torch.no_grad():
+                next_actions = self.Actor(next_states).argmax(dim=-1, keepdim=True)
+                next_q_values = self.target_Actor(next_states).gather(-1, index=next_actions.long())
+                target_q_values = rewards + (self.gamma ** reps) * not_dones * next_q_values
+
+        else:
+            (
+                states, 
+                actions, 
+                rewards, 
+                next_states, 
+                not_dones,
+            ) = self.replay_buffer.sample(self.batch_size)
+            
+            with torch.no_grad():
+                #next_q_values = torch.max(self.target_Actor(next_states), dim=-1, keepdim=True)[0]
+                next_actions = self.Actor(next_states).argmax(dim=-1, keepdim=True)
+                next_q_values = self.target_Actor(next_states).gather(-1, index=next_actions.long())
+                target_q_values = rewards + self.gamma * not_dones * next_q_values
+            
         q_values = self.Actor(states).gather(-1, index=actions.long())
         q_loss = self.loss_func(q_values, target_q_values)
         

@@ -30,5 +30,4 @@ class ZigZag(FallEnv):
             shape=shape,
             start=start,
             goal=goal,
-            max_steps=1000
         )

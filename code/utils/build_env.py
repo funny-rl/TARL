@@ -108,6 +108,7 @@ def get_env_info(
             "state_dim": state_dim,
             "action_dim": action_dim,
             "n_actions": n_actions,
+            "int_action": True,
         }
     elif env_type == CLASSIC_CONTROL:
         env_info: dict[str, Any] = {}
@@ -141,6 +142,7 @@ def get_env_info(
         env_info["action_dim"] = env.action_space.shape[0]
         env_info["max_action"] = float(env.action_space.high[0])
         env_info["n_actions"] = None
+        env_info["use_log_reward"] = env_args.use_log_reward
 
     elif env_type == MUJOCO:
         env_info: dict[str, Any] = {}

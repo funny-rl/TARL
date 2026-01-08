@@ -13,10 +13,11 @@ class GridCore(gym.Env):
 
     def __init__(
         self, 
-        shape: tuple[int] = (6, 10),
-        start: tuple[int] = (0, 0),
-        goal: tuple[int] = (0, 9),
-        max_steps: int = 1000
+        shape: tuple[int,int],
+        start: tuple[int,int],
+        goal: tuple[int,int],
+        max_steps: int,
+        dense_reward: bool,
     ):
         super().__init__()
         try:
@@ -30,6 +31,7 @@ class GridCore(gym.Env):
         self.max_steps = max_steps
         self._steps = 0
         self.total_steps = 0
+        self.dense_reward = dense_reward
 
         self.init_state = np.zeros(self.state_size)
         self.init_state[np.ravel_multi_index(self.start, self.shape)] = 1.0
@@ -163,12 +165,61 @@ class FallEnv(GridCore):
 
     def __init__(
         self, 
-        pits : list[list[int,int]] = [], 
-        **kwargs
+        pits : list[list[int,int]], 
+        shape: tuple[int,int],
+        start: tuple[int,int],
+        goal: tuple[int,int],
+        max_steps: int = 100,
+        dense_reward: bool = False,
     ):
         self.pits = pits
-        super(FallEnv, self).__init__(**kwargs)
+        self.shape = shape
+        self.start = start
+        self.goal = goal
+        self.max_steps = max_steps
+        self.dense_reward = dense_reward
 
+        self.dist = self.calculate_dist_bybfs()
+ 
+        super(FallEnv, self).__init__(
+            shape, 
+            start,
+            goal, 
+            max_steps,
+            dense_reward=False,
+        )
+        
+
+
+    def calculate_dist_bybfs(self) -> list[list[float]]:
+        from collections import deque
+
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # 상, 하, 좌, 우
+        dist = [[0 for _ in range(self.shape[1])] for _ in range(self.shape[0])]
+        visited = [[False for _ in range(self.shape[1])] for _ in range(self.shape[0])]
+        queue = deque([self.goal])
+        visited[self.goal[0]][self.goal[1]] = True
+        max_dist = 0
+        while queue:
+            x, y = queue.popleft()
+
+            for dx, dy in directions:
+                nx, ny = x + dx, y + dy
+
+                if 0 <= nx < self.shape[0] and 0 <= ny < self.shape[1]:
+                    if (not visited[nx][ny]) and ([nx, ny] not in self.pits):
+                        visited[nx][ny] = True
+                        dist[nx][ny] = dist[x][y] - 1
+                        max_dist = max(max_dist, abs(dist[nx][ny]))
+                        queue.append((nx, ny))
+
+        for i in range(self.shape[0]):
+            for j in range(self.shape[1]):
+                if dist[i][j] < 0:
+                    dist[i][j] /= max_dist
+
+        return dist
+    
     def _calculate_transition_prob(self, current : tuple[int,int], delta, prob):
         transitions = []
         for d, p in zip(delta, prob):
@@ -176,17 +227,26 @@ class FallEnv(GridCore):
             new_position = self._check_bounds(new_position)
             new_position = new_position.astype(int)
             new_state = np.ravel_multi_index(tuple(new_position), self.shape)
-            reward = -1
+
+            if self.dense_reward:
+                reward = self.dist[new_position[0]][new_position[1]]
+            else:
+                reward = -1
+
             is_done = False
+
             if new_position.tolist() == self.goal:
                 is_done = True
+
             elif new_state in self.pits:
                 reward = -100
-                new_state = np.ravel_multi_index(self.start, self.shape)
+                is_done = True
+                #new_state = np.ravel_multi_index(self.start, self.shape)
 
             transitions.append((p, new_state, reward, is_done))
 
         return transitions
+
     
     def _init_transition_probability(self):
         for idx, p in enumerate(self.pits):
@@ -208,10 +268,7 @@ class FallEnv(GridCore):
                         [[1, 0], [0, -1], [0, 1], [-1, 0]],
                         [[0, -1], [0, 1], [-1, 0], [1, 0]],
                         [[0, 1], [-1, 0], [1, 0], [0, -1]]]
-            # tmp_pros = [[1 - self.afp, other_prob, other_prob, other_prob],
-            #             [1 - self.afp, other_prob, other_prob, other_prob],
-            #             [1 - self.afp, other_prob, other_prob, other_prob],
-            #             [1 - self.afp, other_prob, other_prob, other_prob], ]
+
             tmp_pros = [[1.0, 0.0, 0.0, 0.0],
                         [1.0, 0.0, 0.0, 0.0],
                         [1.0, 0.0, 0.0, 0.0],

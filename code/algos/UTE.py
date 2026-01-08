@@ -1,26 +1,92 @@
 import torch
+import random
+import collections
+
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 
 from utils.utils import action_transform
 
 from .buffer.repetition_buffer import SkipBuffer
-from ._modules import Duel_Ensemble_Net, Ensemble_DQN, eps_rep_selection
+from ._modules import Ensemble_DQN
+
+class UCB:
+    """
+    Determine the index of the arms in terms of solving a multi-armed bandit problem
+    Attributes:
+      data           : list that stores the index and average reward of the arms
+      num_arms  (int): number of arms used in multi-armed bandit problem
+      epsilon (float): probability to select the index of the arms used in multi-armed bandit problem
+      beta    (float): weight between frequency and mean reward
+      count     (int): if count is less than num_arms, index is count because of trying to pick every arm at least once
+    """
+
+    def __init__(self, num_arms, window_size, epsilon, beta):
+        """
+        num_arms    (int): number of arms used in multi-armed bandit problem
+        window_size (int): size of window used in multi-armed bandit problem
+        epsilon   (float): probability to select the index of the arms used in multi-armed bandit problem
+        beta      (float): weight between frequency and mean reward
+        """
+        
+        self.data = collections.deque(maxlen=window_size)
+        self.num_arms = num_arms
+        self.epsilon = epsilon
+        self.beta = beta
+        self.count = 0
+
+    def pull_index(self):
+        """
+        pull index to determine value of betas and gammas
+        Returns:
+          index (float): index of arms 
+        """
+        
+        if self.count < self.num_arms:
+            index = self.count
+            self.count += 1
+            
+        else:
+            if random.random() > self.epsilon:
+                N = np.zeros(self.num_arms)
+                mu = np.zeros(self.num_arms)
+                
+                for j, reward in self.data:
+                    N[j] += 1
+                    mu[j] += reward
+                mu = mu / (N + 1e-10)
+                index = np.argmax(mu + self.beta * np.sqrt(1 / (N + 1e-6)))
+                
+            else:
+                index = np.random.choice(self.num_arms)
+        return index
+
+    def push_data(self, datas):
+        """
+        push datas to UCB's data list
+        Args:
+          datas :store index of arms and resulting reward         
+        """
+        
+        self.data += [(j, reward) for j, reward in datas]
 
 class UTE:
     def __init__(
         self,
         base_agent,
+        rep_batch_size,
+        rep_buffer_size,
         max_repetition,
         e_greedy_type,
         e_decay,
         max_epsilon,
         min_epsilon,
-        use_dueling,
         num_ensemble,
+        use_adaptive_uncertainty,
         uncertainty_factor,
-        use_geo_e_greedy,
-        geo_p
+        use_act_skip_buf,
+        prev_buffer_save
     ):
         self.base_agent = base_agent
         self.state_dim: int = base_agent.state_dim
@@ -31,15 +97,14 @@ class UTE:
         else:
             self.n_actions = None
         
-        self.buffer_size: int = base_agent.buffer_size
-        self.batch_size: int = base_agent.batch_size
+        self.rep_buffer_size: int = rep_buffer_size
+        self.rep_batch_size: int = rep_batch_size
         self.hidden_dim: int = base_agent.hidden_dim
         self.update_interval: int = base_agent.update_interval
         self.e_decay: int = e_decay
         self.max_repetition: int = max_repetition
         self.num_ensemble: int = num_ensemble
         
-        self.geo_p: float = geo_p
         self.lr: float = base_agent.lr
         self.initial_lr: float = base_agent.initial_lr
         self.final_lr: float = base_agent.final_lr
@@ -48,46 +113,48 @@ class UTE:
         self.epsilon: float = max_epsilon
         self.max_epsilon: float = max_epsilon
         self.min_epsilon: float = min_epsilon
-        self.uncertainty_factor: float = uncertainty_factor
+        self.use_adaptive_uncertainty: bool = use_adaptive_uncertainty
+        if self.use_adaptive_uncertainty:
+            self.lambdas = [-1.5, -1.0, -0.5, -0.2, 0.0, +0.2, +0.5, +1.0, +1.5]
+            num_arms = len(self.lambdas)
+            self.ucb = UCB(
+                num_arms = num_arms, 
+                window_size = 500, 
+                epsilon = 0.1, 
+                beta = 0.5
+            )
+        else:
+            self.uncertainty_factor: float = uncertainty_factor
+
+            
         self.bernoulli_probability: float = 0.5
-        
         self.e_greedy_type: str = e_greedy_type
         self.device: str = base_agent.device
         
         self.use_image: bool = base_agent.use_image
-        self.use_dueling: bool = use_dueling
         self.use_lr_decay: bool = base_agent.use_lr_decay
         self.use_hard_update: bool = base_agent.use_hard_update
-        self.use_geo_e_greedy: bool = use_geo_e_greedy
-        
-        if self.use_dueling:
-            self.Rep_Actor = Duel_Ensemble_Net(
-                self.state_dim,
-                self.action_dim,
-                self.hidden_dim,
-                self.max_repetition,
-                self.use_image,
-                self.num_ensemble,
-                self.n_actions
-            ).to(self.device)
-        else:
-            self.Rep_Actor = Ensemble_DQN(
-                self.state_dim,
-                self.action_dim,
-                self.hidden_dim,
-                self.max_repetition,
-                self.use_image,
-                self.num_ensemble,
-                self.n_actions
-            ).to(self.device)
+        self.use_act_skip_buf: bool = use_act_skip_buf
+
+        self.Rep_Actor = Ensemble_DQN(
+            self.state_dim,
+            self.action_dim,
+            self.hidden_dim,
+            self.max_repetition,
+            self.use_image,
+            self.num_ensemble,
+            self.n_actions
+        ).to(self.device)
         
         self.loss_fn = nn.SmoothL1Loss()
         self.Rep_Actor_optimizer = optim.Adam(self.Rep_Actor.parameters(), lr=self.lr)
         
         self.rep_replay_buffer = SkipBuffer(
-            buffer_size=self.buffer_size,
+            buffer_size=self.rep_buffer_size,
             state_dim=self.state_dim,
             action_dim=self.action_dim,
+            gamma=self.gamma,
+            prev_buffer_save=prev_buffer_save,
             device=self.device
         )
         
@@ -103,7 +170,12 @@ class UTE:
                 self.epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * torch.exp(-1.0 * training_steps / self.e_decay).item()
             else:
                 raise NotImplementedError(f"Epsilon greedy type {self.e_greedy_type} is not supported.")
-
+            
+    def adaptive_lambda(self):
+        self.j = self.ucb.pull_index()
+        self.uncertainty_factor = self.lambdas[self.j]
+        self.ucb_datas: list = []
+        
     def lr_decay(self, training_rate):
         self.base_agent.lr_decay(training_rate)
         self.lr = self.base_agent.lr
@@ -131,53 +203,38 @@ class UTE:
                 std_q_values = torch.std(repetition_q_values, dim=0)
 
                 rep_Qs = mean_q_values + self.uncertainty_factor * std_q_values
+                    
                 repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
             if deterministic:
                 return repetitions, rep_Qs
-
         else:
-            repetitions = eps_rep_selection(
-                self.max_repetition,
-                self.use_geo_e_greedy,
-                torch.tensor(self.geo_p)
-            )
+            repetitions = torch.randint(1, self.max_repetition + 1, (1,)).item()
 
         return repetitions
 
     def add(
         self,
-        state,
-        action,
-        reward,
-        next_state,
-        done,
         skip_states,
-        skip_rewards
+        action,
+        skip_rewards,
+        skip_dones,
+        next_skip_states,
+        repetition
     ):
-        self.base_agent.add(
-            state,
-            action,
-            reward,
-            next_state,
-            done
+        self.rep_replay_buffer = self.rep_replay_buffer.transform(
+            skip_states = skip_states,
+            action = action,
+            skip_rewards = skip_rewards,
+            skip_dones = skip_dones,
+            next_skip_states = next_skip_states,
+            repetition = repetition,
+            buffer = self.rep_replay_buffer
         )
+        if self.use_act_skip_buf:
+            self.base_agent.add_skip_buffer(
+                buffer = self.rep_replay_buffer
+            )
         
-        for idx, start_state in enumerate(skip_states):
-            skip_reward = 0
-            skip_step = 0
-            for exp, r in enumerate(skip_rewards[idx:]):
-                skip_reward += (self.gamma ** exp) * r
-                skip_step += 1
-
-            self.rep_replay_buffer.add(
-                state = start_state,
-                action = action,
-                repetition = skip_step,
-                reward = skip_reward,
-                next_state = next_state,
-                done = done
-            ) 
-    
     def update(self, training_steps: int) -> dict:
         log_dict = self.base_agent.update(training_steps)
         
@@ -188,7 +245,7 @@ class UTE:
             rewards, 
             next_states, 
             not_dones
-        ) = self.rep_replay_buffer.sample(self.batch_size)
+        ) = self.rep_replay_buffer.sample(self.rep_batch_size)
         
         rep_idx = reps.long() - 1
         
@@ -200,7 +257,7 @@ class UTE:
         actions = action_transform(actions, self.n_actions, self.device)
         q_values = self.Rep_Actor(states, actions)
         
-        masks = torch.bernoulli(torch.zeros((self.batch_size, self.num_ensemble), device=self.device) + self.bernoulli_probability)
+        masks = torch.bernoulli(torch.zeros((self.rep_batch_size, self.num_ensemble), device=self.device) + self.bernoulli_probability)
         
         cnt_losses = 0.0
         for k in range(self.num_ensemble):

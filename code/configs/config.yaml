@@ -17,24 +17,27 @@ warmup_steps: 1000 # in step units
 video_save_dir: null # if null, videos are not saved
 log_eval_interval: 100000 # evaluation logging interval: render, action distribution, etc.
 
-save_dir: null #./models/
+# model saving
+save_model: False
+save_dir: ./models/
 save_interval: 10000
 
 common_args:
   gamma: 0.99 #discount factor
-  lr: 0.00025
+  lr: 0.001
   batch_size: 64
+  rep_batch_size: 128
   buffer_size: 50000
+  rep_buffer_size: 500000
   use_lr_decay: false
-  use_hard_update: true
+  use_hard_update: false
   update_interval: 1000 # use only for hard update
   tau: 0.005 # use only for soft update
-  e_greedy_type: exponential # linear | exponential
+  e_greedy_type: linear # linear | exponential
   e_decay: 50000 # for exponential decay
   max_epsilon: 1.0
   min_epsilon: 0.0
-  use_image: true
+  use_image: false
   hidden_dim: 512
-  use_dueling: false
-  use_geo_e_greedy: false
-  geo_p: 0.5
+  use_act_skip_buf: false # whether to use skip buffer in action network training
+  prev_buffer_save: false # whether to save previous buffer for skip buffer

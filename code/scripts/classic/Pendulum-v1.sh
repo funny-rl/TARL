@@ -24,26 +24,31 @@ fi
 
 ENVS=classic
 ENV_NAME=Pendulum-v1
+
+max_repetition=10
 total_training_steps=30000
-eval_interval=300
-eval_episodes=10
-video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
-eval_log_interval=10000
+eval_episodes=5
+eval_interval=200
+eval_interval=$((total_training_steps / 100))
+eval_log_interval=$((total_training_steps / 4))
 e_greedy_type=exponential
-e_decay=3000
-use_image=false
-lr=0.005
+e_decay=$((total_training_steps / 10))
+
+buffer_size=$total_training_steps
+rep_buffer_size=$((total_training_steps*max_repetition))
+
+video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
+
 use_step_rate=true
-use_hard_update=false
 hidden_dim=128
-buffer_size=30000
-batch_size=64
-save_dir=null  #"./models/${ENV_NAME}/"
-save_interval=10000
-use_geo_e_greedy=true
-geo_p=0.5
+lr=0.005
+use_lr_decay=true
+
+use_geo_e_greedy=false
+geo_p=0.3
 alpha=0.01
-uncertainty_factor=2.0
+
+use_adaptive_uncertainty=true
 
 EXTRA_ARGS=()
 
@@ -54,15 +59,23 @@ fi
 if [ "$ALGO" != "null" ]; then
     EXTRA_ARGS+=("algos=$ALGO")
 fi
+if [ "$ALGO" == "Random" ]; then
+    total_training_steps=1
+    eval_episodes=1000
+fi
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
-    EXTRA_ARGS+=("algos.models.max_repetition=20")
+    EXTRA_ARGS+=("algos.models.max_repetition=$max_repetition")
 fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
 fi
+if [ "$MODEL" != "EQL" ]; then
+    use_geo_e_greedy=false
+fi
+
 if [ "$MODEL" == "UTE" ]; then
-    EXTRA_ARGS+=("algos.models.uncertainty_factor=$uncertainty_factor")
+    EXTRA_ARGS+=("algos.models.use_adaptive_uncertainty=$use_adaptive_uncertainty")
 fi
 if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs=$ENVS")
@@ -79,19 +92,17 @@ do
         "eval_interval=$eval_interval"
         "eval_episodes=$eval_episodes"
         "use_step_rate=$use_step_rate"
-        "save_dir=$save_dir"
-        "save_interval=$save_interval"
+        "common_args.lr=$lr"
+        "common_args.use_lr_decay=$use_lr_decay"
         "common_args.e_greedy_type=$e_greedy_type"
         "common_args.e_decay=$e_decay"
-        "common_args.use_image=$use_image"
-        "common_args.lr=$lr"
-        "common_args.use_hard_update=$use_hard_update"
         "common_args.hidden_dim=$hidden_dim"
         "common_args.buffer_size=$buffer_size"
-        "common_args.batch_size=$batch_size"
+        "common_args.rep_buffer_size=$rep_buffer_size"
         "common_args.use_geo_e_greedy=$use_geo_e_greedy"
         "common_args.geo_p=$geo_p"
         "${EXTRA_ARGS[@]}"
     )
     python main.py "${ARGS[@]}"
 done
+
