@@ -24,11 +24,9 @@ fi
 
 ENVS=classic
 ENV_NAME=Pendulum-v1
-
 max_repetition=10
 total_training_steps=30000
 eval_episodes=5
-eval_interval=200
 eval_interval=$((total_training_steps / 100))
 eval_log_interval=$((total_training_steps / 4))
 e_greedy_type=exponential
@@ -40,15 +38,15 @@ rep_buffer_size=$((total_training_steps*max_repetition))
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
 use_step_rate=true
-hidden_dim=128
+hidden_dim=64
 lr=0.005
 use_lr_decay=true
 
-use_geo_e_greedy=false
-geo_p=0.3
 alpha=0.01
+fixed_coeff=true
 
 use_adaptive_uncertainty=true
+use_act_skip_buf=true
 
 EXTRA_ARGS=()
 
@@ -69,11 +67,8 @@ if [ "$MODEL" != "null" ]; then
 fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
+    EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
 fi
-if [ "$MODEL" != "EQL" ]; then
-    use_geo_e_greedy=false
-fi
-
 if [ "$MODEL" == "UTE" ]; then
     EXTRA_ARGS+=("algos.models.use_adaptive_uncertainty=$use_adaptive_uncertainty")
 fi
@@ -99,8 +94,7 @@ do
         "common_args.hidden_dim=$hidden_dim"
         "common_args.buffer_size=$buffer_size"
         "common_args.rep_buffer_size=$rep_buffer_size"
-        "common_args.use_geo_e_greedy=$use_geo_e_greedy"
-        "common_args.geo_p=$geo_p"
+        "common_args.use_act_skip_buf=$use_act_skip_buf"
         "${EXTRA_ARGS[@]}"
     )
     python main.py "${ARGS[@]}"

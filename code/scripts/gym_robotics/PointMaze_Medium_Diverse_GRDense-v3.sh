@@ -25,8 +25,7 @@ fi
 
 ENVS=robotics
 ENV_NAME=PointMaze_Medium_Diverse_GRDense-v3
-
-max_repetition=25
+max_repetition=40
 total_training_steps=400000
 eval_episodes=5
 eval_interval=$((total_training_steps / 100))
@@ -41,15 +40,14 @@ video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
 use_step_rate=true
 hidden_dim=256
-lr=0.0005
+lr=0.001
 use_lr_decay=false
 
-use_geo_e_greedy=true
-geo_p=0.2
 alpha=0.01
+fixed_coeff=true
 
 use_adaptive_uncertainty=true
-use_log_reward=false
+use_act_skip_buf=true
 
 EXTRA_ARGS=()
 
@@ -70,22 +68,18 @@ if [ "$MODEL" != "null" ]; then
 fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
+    EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
 fi
-if [ "$MODEL" != "EQL" ]; then
-    use_geo_e_greedy=false
-fi
-
 if [ "$MODEL" == "UTE" ]; then
     EXTRA_ARGS+=("algos.models.use_adaptive_uncertainty=$use_adaptive_uncertainty")
 fi
 if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs=$ENVS")
     EXTRA_ARGS+=("envs.env_name=$ENV_NAME")
-    EXTRA_ARGS+=("envs.max_episode_steps=500")
-    EXTRA_ARGS+=("envs.use_log_reward=$use_log_reward")
+    EXTRA_ARGS+=("envs.max_episode_steps=400")
 fi
 
-for SEED in 4;
+for SEED in 0 1 2 3 4 5 6 7 8 9;
 do
     ARGS=(
         "use_wandb=$USE_WANDB"
@@ -102,9 +96,9 @@ do
         "common_args.hidden_dim=$hidden_dim"
         "common_args.buffer_size=$buffer_size"
         "common_args.rep_buffer_size=$rep_buffer_size"
-        "common_args.use_geo_e_greedy=$use_geo_e_greedy"
-        "common_args.geo_p=$geo_p"
+        "common_args.use_act_skip_buf=$use_act_skip_buf"
         "${EXTRA_ARGS[@]}"
     )
     python main.py "${ARGS[@]}"
 done
+

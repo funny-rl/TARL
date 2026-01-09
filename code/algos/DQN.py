@@ -166,7 +166,6 @@ class DQN:
             ) = self.replay_buffer.sample(self.batch_size)
             
             with torch.no_grad():
-                #next_q_values = torch.max(self.target_Actor(next_states), dim=-1, keepdim=True)[0]
                 next_actions = self.Actor(next_states).argmax(dim=-1, keepdim=True)
                 next_q_values = self.target_Actor(next_states).gather(-1, index=next_actions.long())
                 target_q_values = rewards + self.gamma * not_dones * next_q_values

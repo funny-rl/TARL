@@ -25,9 +25,9 @@ fi
 
 ENVS=grid
 ENV_NAME=Bridge
-
 max_repetition=9
 total_training_steps=50000
+use_lr_decay=true
 
 buffer_size=$total_training_steps
 rep_buffer_size=$((total_training_steps*max_repetition))
@@ -38,12 +38,15 @@ e_decay=$((total_training_steps * 9 / 10))
 
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
-hidden_dim=64
+
 alpha=0.01
 fixed_coeff=true
+
 uncertainty_factor=-1.5
-use_act_skip_buf=false
-prev_buffer_save=true
+
+hidden_dim=64
+use_act_skip_buf=true
+prev_buffer_save=false
 
 EXTRA_ARGS=()
 
@@ -57,6 +60,7 @@ fi
 if [ "$ALGO" == "Random" ]; then
     total_training_steps=1
     eval_episodes=1000
+    EXTRA_ARGS+=("eval_episodes=$eval_episodes")
 fi
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
@@ -87,6 +91,7 @@ do
         "common_args.e_decay=$e_decay"
         "common_args.hidden_dim=$hidden_dim"
         "common_args.buffer_size=$buffer_size"
+        "common_args.use_lr_decay=$use_lr_decay"
         "common_args.rep_buffer_size=$rep_buffer_size"
         "common_args.use_act_skip_buf=$use_act_skip_buf"
         "common_args.prev_buffer_save=$prev_buffer_save"

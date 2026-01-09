@@ -75,12 +75,14 @@ class DDPG:
         self.target_Critic = deepcopy(self.Critic).to(self.device)
         
         self.loss_fn = nn.SmoothL1Loss()
-        self.replay_buffer = NaiveReplayBuffer(
-            buffer_size=self.buffer_size,
-            state_dim=self.state_dim,
-            action_dim=self.action_dim,
-            device=self.device
-        )
+        
+        if not use_act_skip_buf:
+            self.replay_buffer = NaiveReplayBuffer(
+                buffer_size=self.buffer_size,
+                state_dim=self.state_dim,
+                action_dim=self.action_dim,
+                device=self.device
+            )
 
     def lr_decay(self, training_rate):
         cosine = 0.5 * (1 + torch.cos(torch.pi * torch.tensor(training_rate)))
@@ -130,23 +132,41 @@ class DDPG:
             next_state,
             done
         )
+
+    def add_skip_buffer(self, buffer):
+        self.replay_buffer = buffer
     
     def update(self, training_steps):
+        if self.use_act_skip_buf:
+            (
+                states, 
+                actions, 
+                reps,
+                rewards, 
+                next_states, 
+                not_dones,
+            ) = self.replay_buffer.sample(self.batch_size)
+            with torch.no_grad():
+                next_actions = self.target_Actor(next_states)
+                target_Q_values = self.target_Critic(
+                    torch.cat([next_states, next_actions], dim=-1)
+                )
+                target_Q = rewards + (self.gamma ** reps) * not_dones * target_Q_values
+        else:
+            (
+                states, 
+                actions, 
+                rewards, 
+                next_states, 
+                not_dones,
+            ) = self.replay_buffer.sample(self.batch_size)
 
-        (
-            states, 
-            actions, 
-            rewards, 
-            next_states, 
-            not_dones,
-        ) = self.replay_buffer.sample(self.batch_size)
-
-        with torch.no_grad():
-            next_actions = self.target_Actor(next_states)
-            target_Q_values = self.target_Critic(
-                torch.cat([next_states, next_actions], dim=-1)
-            )
-            target_Q = rewards + self.gamma * not_dones * target_Q_values
+            with torch.no_grad():
+                next_actions = self.target_Actor(next_states)
+                target_Q_values = self.target_Critic(
+                    torch.cat([next_states, next_actions], dim=-1)
+                )
+                target_Q = rewards + self.gamma * not_dones * target_Q_values
         
         current_Q = self.Critic(
             torch.cat([states, actions], dim=-1)

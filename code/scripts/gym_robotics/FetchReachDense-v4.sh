@@ -25,7 +25,6 @@ fi
 
 ENVS=robotics
 ENV_NAME=FetchReachDense-v4
-
 max_repetition=10
 total_training_steps=50000
 eval_episodes=5
@@ -40,15 +39,15 @@ rep_buffer_size=$((total_training_steps*max_repetition))
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
 use_step_rate=true
-hidden_dim=256
+hidden_dim=128
 lr=0.001
-use_lr_decay=true
+use_lr_decay=false
 
-use_geo_e_greedy=false
-geo_p=0.3
 alpha=0.01
+fixed_coeff=true
 
 use_adaptive_uncertainty=true
+use_act_skip_buf=true
 
 EXTRA_ARGS=()
 
@@ -69,11 +68,8 @@ if [ "$MODEL" != "null" ]; then
 fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
+    EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
 fi
-if [ "$MODEL" != "EQL" ]; then
-    use_geo_e_greedy=false
-fi
-
 if [ "$MODEL" == "UTE" ]; then
     EXTRA_ARGS+=("algos.models.use_adaptive_uncertainty=$use_adaptive_uncertainty")
 fi
@@ -99,9 +95,9 @@ do
         "common_args.hidden_dim=$hidden_dim"
         "common_args.buffer_size=$buffer_size"
         "common_args.rep_buffer_size=$rep_buffer_size"
-        "common_args.use_geo_e_greedy=$use_geo_e_greedy"
-        "common_args.geo_p=$geo_p"
+        "common_args.use_act_skip_buf=$use_act_skip_buf"
         "${EXTRA_ARGS[@]}"
     )
     python main.py "${ARGS[@]}"
 done
+

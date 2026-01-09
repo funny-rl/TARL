@@ -12,8 +12,16 @@ random_reward_dict = {
     "pointmaze" : 9.652
 }
 
+max_score_dict = {
+    "cliffwalking" : -13.0,
+    "bridge" : -13.0,
+    "zigzag" : -20.0,
+    "pendulum" : -149.714,
+    "fetchreachdense" : -1.701,
+}
+
 def preprocess(env_name) -> dict:
-    data_folder = "./data/main_experiment/"
+    data_folder = "./data/main_exp/"
     df = pd.read_csv(os.path.join(data_folder, f"{env_name}.csv"))
     df = df.drop(columns=df.filter(regex='__MIN|__MAX').columns)
 
@@ -24,11 +32,8 @@ def preprocess(env_name) -> dict:
     
     x = df_norm['Step'].values
     algorithms = df_norm.columns.difference(['Step'])
-    
-    if env_name in ["cliffwalking", "zigzag", "bridge"]:
-        denom = df_norm["Group: DDQN_linear - eval/avg_reward"] - random_reward
-    else:
-        denom = df_norm["Group: DDPG - eval/avg_reward"] - random_reward
+
+    denom = max_score_dict[env_name] - random_reward
     
     df_norm[cols_to_norm] = (
         df_norm[cols_to_norm]
@@ -37,13 +42,11 @@ def preprocess(env_name) -> dict:
     )
     
     auc_results = {}
-    
     for algo in algorithms:
         y = df_norm[algo].values
-        area = np.trapezoid(y, x)
+        area = np.trapz(y, x)
         normalized_auc = area / (x.max() - x.min())
         auc_results[algo] = float(round(normalized_auc, 3))
-    
     auc_series = pd.Series(auc_results).sort_values(ascending=False)
     
     return auc_series
@@ -56,7 +59,7 @@ def main():
     
     pendulum_auc = preprocess("pendulum")
     fetchreachdense_auc = preprocess("fetchreachdense")
-    pointmaze_auc = preprocess("pointmaze")
+    # pointmaze_auc = preprocess("pointmaze")
     
     
     print("[CliffWalking]\n",cliffwalking_auc)
@@ -67,7 +70,7 @@ def main():
 
     print("\n[Pendulum]\n",pendulum_auc)
     print("[FetchReachDense]\n",fetchreachdense_auc)
-    print("\n[PointMaze]\n",pointmaze_auc)
+    # print("\n[PointMaze]\n",pointmaze_auc)
 
 if __name__ == "__main__":
     main()
