@@ -3,6 +3,7 @@
 cd ../../
 
 export HYDRA_FULL_ERROR=1
+#export WANDB_MODE=offline
 
 ALGO=$1
 MODEL=$2
@@ -45,8 +46,9 @@ alpha=0.01
 
 fixed_coeff=false
 n_sample=1
+sigma_decay=true
 use_adaptive_uncertainty=true
-use_act_skip_buf=false
+use_act_skip_buf=true
 
 EXTRA_ARGS=()
 
@@ -68,6 +70,7 @@ fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
     EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
+    EXTRA_ARGS+=("algos.models.continuous.sigma_decay=$sigma_decay")
     EXTRA_ARGS+=("algos.models.continuous.n_sample=$n_sample")
 fi
 if [ "$MODEL" == "UTE" ]; then

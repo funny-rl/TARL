@@ -123,6 +123,7 @@ def set_hyperparam(
                 "alpha": model_args.alpha,
                 "fixed_coeff": model_args.fixed_coeff,
                 "sigma": model_args.continuous.sigma,
+                "sigma_decay": model_args.continuous.sigma_decay,
                 "n_sample": model_args.continuous.n_sample,
                 "use_act_skip_buf": use_act_skip_buf,
                 "prev_buffer_save": prev_buffer_save,

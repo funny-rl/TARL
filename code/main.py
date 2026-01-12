@@ -112,8 +112,10 @@ def main(args):
         assert hasattr(rep_agent, "ucb"), "Adaptive repetition lambda requires UCB Algorithms."
     
     if use_wandb:
+        unique_id = unique_id = f"{algo_name}_{model_name}_{args.group_name}_{env_name}_s{seed}"
         wandb.init(
             project=env_name, 
+            id=unique_id,
             name=f"{algo_name}_{model_name}_{env_name}_{seed}",
             group=args.group_name,
             config=OmegaConf.to_container(args, resolve=True),

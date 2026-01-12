@@ -5,4 +5,5 @@ alpha: 0.1
 fixed_coeff: false
 continuous: # only for continuous action space
   sigma: 0.1
+  sigma_decay: true
   n_sample: 10 

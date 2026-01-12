@@ -22,6 +22,7 @@ class EQL:
         alpha,
         fixed_coeff,
         sigma,
+        sigma_decay,
         n_sample,
         use_act_skip_buf,
         prev_buffer_save
@@ -48,6 +49,7 @@ class EQL:
         self.n_sample: int = n_sample
 
         self.sigma = sigma  
+        self.init_sigma = sigma
         self.lr: float = base_agent.lr  
         self.initial_lr: float = base_agent.initial_lr
         self.final_lr: float = base_agent.final_lr
@@ -66,6 +68,7 @@ class EQL:
         self.use_hard_update: bool = base_agent.use_hard_update
         self.fixed_coeff: bool = fixed_coeff
         self.use_act_skip_buf: bool = use_act_skip_buf
+        self.sigma_decay: bool = sigma_decay
         
         self.Rep_Actor = Rep_DQN(
             self.state_dim,
@@ -173,7 +176,12 @@ class EQL:
             self.expl_alpha = max(self.alpha, self.epsilon)
         else:
             self.expl_alpha = self.alpha
-
+        
+        if self.sigma_decay:
+            self.sigma = (self.epsilon ** 0.5) * self.init_sigma
+        else:
+            self.sigma = self.init_sigma
+            
         with torch.no_grad():
             if self.n_actions is not None:
                 next_qs = self.base_agent.target_Actor(next_states) 
