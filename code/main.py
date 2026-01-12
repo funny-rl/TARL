@@ -102,7 +102,12 @@ def main(args):
     has_base_agent: bool = hasattr(rep_agent, "base_agent")
     use_adaptive_lambda = getattr(rep_agent, "use_adaptive_uncertainty", False)
     
-    assert has_base_agent or not use_act_skip_buf, "Action skip buffer can be used only when there is a base agent."
+    if model_name == "TAAC":
+        assert use_act_skip_buf == False, "TAAC model does not support action skip buffer."
+        
+    else:
+        assert has_base_agent or not use_act_skip_buf, "Action skip buffer can be used only when there is a base agent."
+    
     if use_adaptive_lambda:
         assert hasattr(rep_agent, "ucb"), "Adaptive repetition lambda requires UCB Algorithms."
     
@@ -117,6 +122,8 @@ def main(args):
     while training_steps <= total_training_steps:
         with episode_stats(episode_stats_dict) as log: 
             done = False
+            prev_action = None
+            
             state = state_transform(state, use_step_rate, env, device)
             if use_adaptive_lambda:
                 rep_agent.adaptive_lambda()
@@ -124,16 +131,21 @@ def main(args):
             while not done:
                 train = training_steps >= warmup_steps
                 if train:
-                    action = rep_agent.select_action(state)
-                    repetition = rep_agent.select_repetition(
-                        state,
-                        action_transform(
-                            action, 
-                            env_info.get("n_actions", None), 
-                            device
-                        ),
-                    )
+                    if model_name == "TAAC":
+                        action, beta = rep_agent.select_action(state, prev_action)
+                    else:
+                        action = rep_agent.select_action(state)
+                        repetition = rep_agent.select_repetition(
+                            state,
+                            action_transform(
+                                action, 
+                                env_info.get("n_actions", None), 
+                                device
+                            ),
+                        )
                 else:
+                    if model_name == "TAAC":
+                        beta = 1.0
                     action = env.action_space.sample()
                     repetition = rep_agent.select_repetition(state)
 
@@ -177,15 +189,27 @@ def main(args):
                                 done = done,
                             )
                         else:
-                            rep_agent.add(
-                                state = state.cpu(),
-                                action = action,
-                                reward = reward,
-                                next_state = next_state.cpu(),
-                                done = done,
-                            )
+                            if model_name == "TAAC":
+                                rep_agent.add(
+                                    state = state.cpu(),
+                                    action = action,
+                                    prev_action = prev_action,
+                                    reward = reward,
+                                    next_state = next_state.cpu(),
+                                    beta = beta,
+                                    done = done,
+                                )
+                            else:
+                                rep_agent.add(
+                                    state = state.cpu(),
+                                    action = action,
+                                    reward = reward,
+                                    next_state = next_state.cpu(),
+                                    done = done,
+                                )
 
                     state = next_state
+                    prev_action = action
                     
                     if train:
                         log_dict: dict[str, Any] = rep_agent.update(training_steps)
@@ -194,7 +218,7 @@ def main(args):
 
                     if eval_interval > 0 and training_steps % eval_interval == 0:
                         eval(
-                            env_name = env_name,
+                            model_name = model_name,
                             env_args = env_args,
                             rep_agent = rep_agent,
                             seed = seed,
@@ -280,7 +304,7 @@ def main(args):
     env.close()
 
 def eval(
-    env_name,
+    model_name,
     env_args,
     rep_agent,
     seed,
@@ -309,7 +333,8 @@ def eval(
 
     total_rewards: list[float] = []
     eval_repetition: list[int] = []
-    eval_num_decision: list[int] = []    
+    eval_num_decision: list[int] = []  
+      
     for ep in range(eval_episodes):
         start_time = time.time()
         done = False
@@ -321,10 +346,16 @@ def eval(
         state, _ = eval_env.reset(seed = test_seed)
         eval_step = 0
         eval_log: list[dict[str, Any]] = []
+        prev_action = None
 
         while not done:
             state = state_transform(state, use_step_rate, eval_env, device)
-            action = rep_agent.select_action(state, deterministic=True)
+            
+            if model_name == "TAAC":
+                action, _ = rep_agent.select_action(state, prev_action, deterministic=True)
+            else:
+                action = rep_agent.select_action(state, deterministic=True)
+                
             repetition, rep_Qs = rep_agent.select_repetition(
                 state,
                 action_transform(
@@ -359,6 +390,7 @@ def eval(
                     frames.append(frame)
                 
                 state = next_state
+                prev_action = action
                 
                 episode_reward += reward
                 if done:

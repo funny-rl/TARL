@@ -1,0 +1,6 @@
+model_name: TAAC
+
+max_repetition: 10
+temperature: 0.1
+target_entropy_delta: 0.05
+seq_len: 10

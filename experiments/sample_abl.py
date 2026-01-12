@@ -5,7 +5,6 @@ import numpy as np
 from rliable import library as rly
 from rliable import metrics
 
-from dicts import random_reward_dict, max_score_dict
 
 
 def preprocess(env_name, algo_name) -> dict:
@@ -38,44 +37,39 @@ def preprocess(env_name, algo_name) -> dict:
     return np_scores
 
 def main():
-    if discrete:
-        envs = ["cliff",  "bridge", "zigzag"]
-        algos = [
-            "DDPG", 
-            "TempoRL", 
-            "TempoRL_skip", 
-            "TempoRL_prev",
-            "UTE_prev",
-            "UTE_skip",
-            "UTE",
-            "EQL", 
-            "EQL_fix",
-            "EQL_skip",
-            "EQL_skip_fix",
-            "EQL_prev",
-            "EQL_fix_prev",
-        ]
-    else:
-        envs = [
-            "pendulum", 
-            "fetchreachdense",
-            "pointmaze"
-        ]
-        algos = [
-            "DDPG", 
-            "TempoRL", 
-            "TempoRL_skip", 
-            "UTE",
-            "UTE_skip",
-            "EQL", 
-            "EQL_fix",
-            "EQL_skip",
-            "EQL_skip_fix",
-            "TAAC",
-            "EQL_sample1",
-            "EQL_sample5",
-            "EQL_sample20"
-        ]
+    # envs = ["cliff",  "bridge", "zigzag"]
+    # algos = [
+    #     "DDPG", 
+    #     "TempoRL", 
+    #     "TempoRL_skip", 
+    #     "TempoRL_prev",
+    #     "UTE_prev",
+    #     "UTE_skip",
+    #     "UTE",
+    #     "EQL", 
+    #     "EQL_fix",
+    #     "EQL_skip",
+    #     "EQL_skip_fix",
+    #     "EQL_prev",
+    #     "EQL_fix_prev",
+    # ]
+    envs = [
+        "pendulum", 
+        "fetchreachdense",
+        "pointmaze"
+    ]
+    algos = [
+        "DDPG", 
+        "TempoRL", 
+        "TempoRL_skip", 
+        "UTE",
+        "UTE_skip",
+        "EQL", 
+        "EQL_fix",
+        "EQL_skip",
+        "EQL_skip_fix",
+        "TAAC"
+    ]
     
     print("=" * 100)
     print(f"{'ENV':<10} | {'ALGORITHM RANKING (Descending by IQM Score)':<90}")
@@ -111,6 +105,5 @@ def main():
         print("-" * 100)
 
 if __name__ == "__main__":
-    discrete = False
     main()
     

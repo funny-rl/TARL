@@ -40,14 +40,15 @@ video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
 use_step_rate=true
 hidden_dim=128
-lr=0.001
-use_lr_decay=false
+lr=0.002
+use_lr_decay=true
 
 alpha=0.01
-fixed_coeff=true
+fixed_coeff=false
+n_sample=20
 
 use_adaptive_uncertainty=true
-use_act_skip_buf=true
+use_act_skip_buf=false
 
 EXTRA_ARGS=()
 
@@ -60,7 +61,7 @@ if [ "$ALGO" != "null" ]; then
 fi
 if [ "$ALGO" == "Random" ]; then
     total_training_steps=1
-    eval_episodes=1000
+    eval_episodes=100
 fi
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
@@ -69,6 +70,7 @@ fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
     EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
+    EXTRA_ARGS+=("algos.models.continuous.n_sample=$n_sample")
 fi
 if [ "$MODEL" == "UTE" ]; then
     EXTRA_ARGS+=("algos.models.use_adaptive_uncertainty=$use_adaptive_uncertainty")

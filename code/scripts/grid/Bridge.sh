@@ -38,14 +38,13 @@ e_decay=$((total_training_steps * 9 / 10))
 
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
-
 alpha=0.01
-fixed_coeff=true
+fixed_coeff=false
 
 uncertainty_factor=-1.5
 
 hidden_dim=64
-use_act_skip_buf=true
+use_act_skip_buf=false
 prev_buffer_save=false
 
 EXTRA_ARGS=()

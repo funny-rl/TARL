@@ -84,7 +84,6 @@ def set_hyperparam(
         max_repetition: int = model_args.max_repetition
         rep_batch_size: int = hyper_args.rep_batch_size
         rep_buffer_size: int = hyper_args.rep_buffer_size
-
         if model_name == "TempoRL":
             model_config = {
                 "rep_batch_size": rep_batch_size,
@@ -127,6 +126,12 @@ def set_hyperparam(
                 "n_sample": model_args.continuous.n_sample,
                 "use_act_skip_buf": use_act_skip_buf,
                 "prev_buffer_save": prev_buffer_save,
+            }
+        elif model_name == "TAAC":
+            model_config = {
+                "temperature": model_args.temperature,
+                "target_entropy_delta": model_args.target_entropy_delta,
+                "seq_len" : model_args.seq_len,
             }
         else:
             raise NotImplementedError(f"Model {model_name} is not supported.")
