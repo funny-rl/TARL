@@ -5,7 +5,7 @@ import numpy as np
 from rliable import library as rly
 from rliable import metrics
 
-
+from dicts import random_reward_dict, max_score_dict
 
 def preprocess(env_name, algo_name) -> dict:
     """

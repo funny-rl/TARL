@@ -28,20 +28,21 @@ def preprocess(env_name, algo_name) -> dict:
     for col in df.columns:
         if col != "Step":
             seed_values = df[col].values
-            # AUC normalization
             normalized_values = (seed_values - random_reward_dict[env_name]) / (max_score_dict[env_name] - random_reward_dict[env_name])
-            # 면적 계산
             auc = np.trapezoid(normalized_values, x=steps) / total_range
             final_scores.append(auc)
+    
+    assert len(final_scores) == NUM_SEEDS, "Number of seeds mismatch!"
+    
     np_scores = np.array([final_scores]).T  # shape: (num_seeds, num_steps)
     
     return np_scores
 
 def main():
     if discrete:
-        envs = ["cliff",  "bridge", "zigzag"]
+        envs = ["cliff", "zigzag", "bridge"]
         algos = [
-            "DDPG", 
+            "DDQN", 
             "TempoRL", 
             "TempoRL_skip", 
             "TempoRL_prev",
@@ -58,8 +59,6 @@ def main():
     else:
         envs = [
             "pendulum", 
-            "fetchreachdense",
-            "pointmaze"
         ]
         algos = [
             "DDPG", 
@@ -67,13 +66,11 @@ def main():
             "TempoRL_skip", 
             "UTE",
             "UTE_skip",
-            "EQL", 
-            "EQL_fix",
-            "EQL_skip",
-            "EQL_skip_fix",
             "TAAC",
             "EQL_sample1",
             "EQL_sample5",
+            "EQL_sample10",
+            "EQL_sample15",
             "EQL_sample20"
         ]
     
@@ -112,5 +109,6 @@ def main():
 
 if __name__ == "__main__":
     discrete = False
+    NUM_SEEDS = 20
     main()
     

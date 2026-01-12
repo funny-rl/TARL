@@ -45,7 +45,7 @@ use_lr_decay=false
 
 alpha=0.01
 fixed_coeff=false
-n_sample=20
+n_sample=10
 
 use_adaptive_uncertainty=true
 use_act_skip_buf=false
@@ -81,7 +81,7 @@ if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs.max_episode_steps=500")
 fi
 
-for SEED in 10 20 30 40 50 60 70 80 90 100;
+for SEED in 0 1 2 3 4 5 6 7 8 9;
 do
     ARGS=(                                                                                                                           
         "use_wandb=$USE_WANDB"

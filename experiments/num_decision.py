@@ -5,7 +5,7 @@ import numpy as np
 from rliable import library as rly
 from rliable import metrics
 
-from .dicts import decision_dict
+from dicts import decision_dict
 
 def preprocess(env_name, algo_name) -> dict:
     """

@@ -30,11 +30,14 @@ class EQL:
         self.state_dim: int = base_agent.state_dim
         self.action_dim: int = base_agent.action_dim
         
-        if hasattr(self.base_agent, "n_actions"):
-            self.n_actions = base_agent.n_actions
-        else:
+        self.is_continuous = False if hasattr(self.base_agent, "n_actions") else True
+        
+        if self.is_continuous:
             self.n_actions = None
             self.max_action = base_agent.max_action
+        else:
+            self.n_actions = base_agent.n_actions
+            
         
         self.rep_buffer_size: int = rep_buffer_size
         self.rep_batch_size: int = rep_batch_size
@@ -73,7 +76,6 @@ class EQL:
             self.n_actions
         ).to(self.device)
         
-        self.target_Rep_Actor = deepcopy(self.Rep_Actor).to(self.device)
         self.loss_fn = nn.SmoothL1Loss()
         self.Rep_Actor_optimizer = optim.Adam(self.Rep_Actor.parameters(), lr=self.lr)
         self.loss_func = nn.SmoothL1Loss()
@@ -176,14 +178,12 @@ class EQL:
             if self.n_actions is not None:
                 next_qs = self.base_agent.target_Actor(next_states) 
                 max_q = torch.max(next_qs, dim=-1, keepdim=True)[0]
-                mean_q = torch.mean(next_qs, dim=-1, keepdim=True)  
-
+                mean_q = torch.mean(next_qs, dim=-1, keepdim=True)
             else:
                 next_actions = self.base_agent.target_Actor(next_states)
-                rep_q_values = self.base_agent.target_Critic(
+                max_q = self.base_agent.target_Critic(
                     torch.cat([next_states, next_actions], dim=-1)
                 )
-                max_q = torch.max(rep_q_values, dim=-1, keepdim=True)[0]
                 noises = (torch.randn(self.n_sample, self.rep_batch_size, self.action_dim) * self.sigma).to(self.device)
                 mean_q = 0.0
                 for noise in noises:

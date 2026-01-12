@@ -25,10 +25,12 @@ class TempoRL:
         self.state_dim: int = base_agent.state_dim
         self.action_dim: int = base_agent.action_dim
         
-        if hasattr(self.base_agent, "n_actions"):
-            self.n_actions = base_agent.n_actions
-        else:
+        self.is_continuous = False if hasattr(self.base_agent, "n_actions") else True
+        
+        if self.is_continuous:
             self.n_actions = None
+        else:
+            self.n_actions = base_agent.n_actions
             
         self.rep_buffer_size: int = rep_buffer_size
         self.rep_batch_size: int = rep_batch_size
@@ -159,8 +161,15 @@ class TempoRL:
         rep_idx = reps.long() - 1
         
         with torch.no_grad():
-            next_actions = self.base_agent.target_Actor(next_states)
-            next_q_values = torch.max(next_actions, dim=-1, keepdim=True)[0]
+            if self.is_continuous:
+                next_actions = self.base_agent.target_Actor(next_states)
+                next_q_values = self.base_agent.target_Critic(
+                    torch.cat([next_states, next_actions], dim=-1)
+                )
+            else:   
+                next_actions = self.base_agent.target_Actor(next_states)
+                next_q_values = torch.max(next_actions, dim=-1, keepdim=True)[0]
+            
             target_q_values = rewards + not_dones * (self.gamma ** reps) * next_q_values
 
         actions = action_transform(actions, self.n_actions, self.device)

@@ -101,7 +101,7 @@ class DDPG:
             action = self.Actor(state).flatten()
         if not deterministic:
             action += torch.normal(0, self.expl_noise, size=action.shape).to(self.device)
-        action = torch.clamp(action, -self.max_action, self.max_action)
+            action = torch.clamp(action, -self.max_action, self.max_action)
         return action.cpu().numpy()
     
     def select_repetition(

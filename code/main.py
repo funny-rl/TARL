@@ -150,7 +150,6 @@ def main(args):
                     repetition = rep_agent.select_repetition(state)
 
                 log["repetition"].append(repetition)
-
                 (
                     skip_states, 
                     skip_rewards, 
@@ -334,9 +333,8 @@ def eval(
     total_rewards: list[float] = []
     eval_repetition: list[int] = []
     eval_num_decision: list[int] = []  
-      
+    total_eval_time: list[float] = []
     for ep in range(eval_episodes):
-        start_time = time.time()
         done = False
         frames: list[Any] = []
         episode_reward: float = 0.0
@@ -347,6 +345,8 @@ def eval(
         eval_step = 0
         eval_log: list[dict[str, Any]] = []
         prev_action = None
+        
+        start_time = time.time()
 
         while not done:
             state = state_transform(state, use_step_rate, eval_env, device)
@@ -402,6 +402,9 @@ def eval(
         end_time = time.time()
         eval_log.append({"episode_reward": episode_reward})
         print(f"[Evaluation] Episode: {ep+1} | Reward: {episode_reward} | Time: {end_time - start_time:.2f} seconds")
+        
+        total_eval_time.append(end_time - start_time)
+        
         if (use_eval_render and (training_steps % log_eval_interval == 0)) and episode_reward > best_reward:
             best_reward = episode_reward
             best_frames = frames.copy()
@@ -432,6 +435,7 @@ def eval(
     avg_repetition: float = np.mean(eval_repetition)
     std_repetition: float = np.std(eval_repetition)
     avg_decision: float = np.mean(eval_num_decision)
+    avg_eval_time: float = np.mean(total_eval_time)
     
     if use_wandb:
         wandb.log(
@@ -440,6 +444,7 @@ def eval(
                 "eval/avg_repetition": avg_repetition,
                 "eval/std_repetition": std_repetition,
                 "eval/avg_num_decision": avg_decision,
+                "eval/avg_eval_time": avg_eval_time,
             },
             step=training_steps,
         )

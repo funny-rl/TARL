@@ -26,7 +26,7 @@ fi
 ENVS=grid
 ENV_NAME=CliffWalking
 max_repetition=9
-total_training_steps=50000
+total_training_steps=30000
 use_lr_decay=true
 
 buffer_size=$total_training_steps
@@ -38,13 +38,11 @@ e_decay=$((total_training_steps * 9 / 10))
 
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
-
 alpha=0.01
-fixed_coeff=false
-
 uncertainty_factor=-1.5
-
 hidden_dim=64
+
+fixed_coeff=false
 use_act_skip_buf=false
 prev_buffer_save=false
 
@@ -80,7 +78,7 @@ if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs.env_name=$ENV_NAME")
 fi
 
-for SEED in 10 20 30 40 50 60 70 80 90 100;
+for SEED in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19;
 do
     ARGS=(
         "use_wandb=$USE_WANDB"

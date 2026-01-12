@@ -79,7 +79,7 @@ decision_dict = {
     }
 }
 
-time_dict = {
+train_time_dict = {
     "cliff": {
         "EQL": 4.1,
         "EQL_fix": 4.7,
