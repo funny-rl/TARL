@@ -97,6 +97,10 @@ def main(args):
         "rep_td_error": [],
         "actor_loss": [],
         "critic_loss": [],
+        "rep_max_td_error": [],
+        "rep_mean_td_error": [],
+        "rep_mean_q_loss": [],
+        "rep_max_q_loss": [],
     }
     
     has_base_agent: bool = hasattr(rep_agent, "base_agent")
@@ -112,7 +116,7 @@ def main(args):
         assert hasattr(rep_agent, "ucb"), "Adaptive repetition lambda requires UCB Algorithms."
     
     if use_wandb:
-        unique_id = unique_id = f"{algo_name}_{model_name}_{args.group_name}_{env_name}_s{seed}"
+        unique_id = unique_id = f"{algo_name}_{model_name}_{args.group_name}_{env_name}_{seed}_{time.time()}"
         wandb.init(
             project=env_name, 
             id=unique_id,
@@ -161,7 +165,6 @@ def main(args):
 
                 if env_info.get("int_action", None) is not None:
                     action = int(action.item())
-                    
                 for _ in range(repetition):
                     (
                         next_state, 
@@ -263,12 +266,16 @@ def main(args):
                         )
                         rep_agent.lr_decay(training_rate)
 
+                    if hasattr(rep_agent, "alpha"):
+                        rep_agent.alpha_update()
+
                     if done:
                         num_episodes += 1
                         state, _ = env.reset()
                         log["lr"] = rep_agent.lr
-                        if hasattr(rep_agent, "expl_alpha"):
-                            log["alpha"] = rep_agent.expl_alpha
+                        
+                        if hasattr(rep_agent, "alpha"):
+                            log["alpha"] = rep_agent.alpha
                         
                         msg = f"Training steps: {training_steps} | Episode: {num_episodes} | Rewards: {log['episode_reward']} | LR: {rep_agent.lr} | {env_name} | Algo: {algo_name} | Model: {model_name}"
                         if hasattr(rep_agent, "epsilon"):

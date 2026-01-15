@@ -8,6 +8,9 @@ from utils.utils import action_transform
 from .buffer.repetition_buffer import SkipBuffer
 from ._modules import Rep_DQN
 
+from torch.func import stack_module_state, functional_call
+import copy
+
 class EQL:
     def __init__(
         self,
@@ -58,10 +61,6 @@ class EQL:
         self.epsilon: float = max_epsilon
         self.max_epsilon: float = max_epsilon
         self.min_epsilon: float = min_epsilon
-        self.alpha: float = alpha
-        
-        self.e_greedy_type: str = e_greedy_type
-        self.device: str = base_agent.device
         
         self.use_image: bool = base_agent.use_image
         self.use_lr_decay: bool = base_agent.use_lr_decay
@@ -70,7 +69,14 @@ class EQL:
         self.use_act_skip_buf: bool = use_act_skip_buf
         self.sigma_decay: bool = sigma_decay
         
-        self.Rep_Actor = Rep_DQN(
+
+        self.alpha = alpha if self.fixed_coeff else max_epsilon
+        self.min_alpha: float = alpha
+        
+        self.e_greedy_type: str = e_greedy_type
+        self.device: str = base_agent.device
+
+        self.max_Rep_Actor = Rep_DQN(
             self.state_dim,
             self.action_dim,
             self.hidden_dim,
@@ -79,9 +85,15 @@ class EQL:
             self.n_actions
         ).to(self.device)
         
+        self.mean_Rep_Actor = deepcopy(self.max_Rep_Actor)
+        
+        self.target_max_Rep_Actor = deepcopy(self.max_Rep_Actor)
+        self.target_mean_Rep_Actor = deepcopy(self.mean_Rep_Actor)
+        
         self.loss_fn = nn.SmoothL1Loss()
-        self.Rep_Actor_optimizer = optim.Adam(self.Rep_Actor.parameters(), lr=self.lr)
-        self.loss_func = nn.SmoothL1Loss()
+        self.max_Rep_Actor_optimizer = optim.Adam(self.max_Rep_Actor.parameters(), lr=self.lr)
+        self.mean_Rep_Actor_optimizer = optim.Adam(self.mean_Rep_Actor.parameters(), lr=self.lr)
+        
         self.rep_replay_buffer = SkipBuffer(
             buffer_size=self.rep_buffer_size,
             state_dim=self.state_dim,
@@ -107,7 +119,10 @@ class EQL:
     def lr_decay(self, training_rate):
         self.base_agent.lr_decay(training_rate)
         self.lr = self.base_agent.lr
-        for param_group in self.Rep_Actor_optimizer.param_groups:
+        
+        for param_group in self.max_Rep_Actor_optimizer.param_groups:
+            param_group['lr'] = self.lr
+        for param_group in self.mean_Rep_Actor_optimizer.param_groups:
             param_group['lr'] = self.lr
             
     def select_action(
@@ -125,10 +140,18 @@ class EQL:
     ):
         if (deterministic or torch.rand(1).item() > self.epsilon) and action is not None:
             with torch.no_grad():
-                rep_Qs = self.Rep_Actor(state, action)
-                repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
-            if deterministic:
-                return repetitions, rep_Qs
+                
+                max_rep_q = self.max_Rep_Actor(state, action)
+                mean_rep_q = self.mean_Rep_Actor(state, action)
+                
+                if deterministic:
+                    rep_Qs = (1.0 - self.min_alpha) * max_rep_q + self.min_alpha * mean_rep_q
+                    repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
+                    return repetitions, rep_Qs
+                else:
+                    rep_Qs = (1.0 - self.alpha) * max_rep_q + self.alpha * mean_rep_q
+                    repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
+                    return repetitions
 
         else:
             repetitions = torch.randint(1, self.max_repetition + 1, (1,)).item()
@@ -157,10 +180,15 @@ class EQL:
             self.base_agent.add_skip_buffer(
                 buffer = self.rep_replay_buffer
             )
+            
+    def alpha_update(self):
+        if not self.fixed_coeff:
+            self.alpha = max(self.epsilon / 5, self.min_alpha)
+        else:
+            self.alpha = self.min_alpha
     
     def update(self, training_steps: int) -> dict:
         log_dict = self.base_agent.update(training_steps)
-        
         (
             states, 
             actions, 
@@ -171,55 +199,76 @@ class EQL:
         ) = self.rep_replay_buffer.sample(self.rep_batch_size)
         
         rep_idx = reps.long() - 1
-
-        if not self.fixed_coeff:
-            self.expl_alpha = max(self.alpha, self.epsilon)
-        else:
-            self.expl_alpha = self.alpha
         
-        if self.sigma_decay:
-            self.sigma = (self.epsilon ** 0.5) * self.init_sigma
-        else:
-            self.sigma = self.init_sigma
-            
         with torch.no_grad():
             if self.n_actions is not None:
-                next_qs = self.base_agent.target_Actor(next_states) 
-                max_q = torch.max(next_qs, dim=-1, keepdim=True)[0]
-                mean_q = torch.mean(next_qs, dim=-1, keepdim=True)
+                next_actions = torch.argmax(self.base_agent.target_Actor(next_states), dim=-1, keepdim=True)
+                next_actions = action_transform(next_actions, self.n_actions, self.device)
+                max_q = self.target_max_Rep_Actor(next_states, next_actions).max(dim=-1, keepdim=True)[0]
+                
+                mean_q = torch.zeros(self.rep_batch_size, self.n_actions).to(self.device)
+                for idx in range(self.n_actions):
+                    #  batch x one_hot_action
+                    dummy_action = torch.zeros(self.rep_batch_size, self.n_actions).to(self.device)
+                    dummy_action[:, idx] = 1.0
+                    next_rep_mean_q = self.target_mean_Rep_Actor(next_states, dummy_action).mean(dim=-1, keepdim=False)
+                    mean_q[:, idx] = next_rep_mean_q
+                
+                mean_q  = mean_q.mean(dim=-1, keepdim=True)
+                
             else:
                 next_actions = self.base_agent.target_Actor(next_states)
+                # max_q = self.target_max_Rep_Actor(next_states, next_actions).max(dim=-1, keepdim=True)[0]
                 max_q = self.base_agent.target_Critic(
                     torch.cat([next_states, next_actions], dim=-1)
                 )
+                
                 noises = (torch.randn(self.n_sample, self.rep_batch_size, self.action_dim) * self.sigma).to(self.device)
-                mean_q = 0.0
-                for noise in noises:
+                # mean_q = torch.zeros(self.rep_batch_size, self.n_sample).to(self.device)
+                mean_q = torch.zeros(self.rep_batch_size, self.n_sample).to(self.device)
+                for idx, noise in enumerate(noises):
                     noisy_next_actions = (next_actions + noise).clamp(-self.max_action, self.max_action)
+                    # rep_q_values = self.target_mean_Rep_Actor(next_states, noisy_next_actions).mean(dim=-1, keepdim=False)
                     rep_q_values = self.base_agent.target_Critic(
                         torch.cat([next_states, noisy_next_actions], dim=-1)
-                    )
-                    mean_rep_q = torch.mean(rep_q_values, dim=-1, keepdim=True)
-                    mean_q += mean_rep_q / self.n_sample
-                
-            next_q_values = (1 - self.expl_alpha) * max_q + self.expl_alpha * mean_q 
-            target_Q = rewards + not_dones * (self.gamma ** reps) * next_q_values
+                    ).squeeze(-1)
+                    mean_q[:, idx] = rep_q_values
+                    
+                mean_q = mean_q.mean(dim=-1, keepdim=True)
+
+            target_max_Q = rewards + not_dones * (self.gamma ** reps) * max_q
+            target_mean_Q = rewards + not_dones * (self.gamma ** reps) * mean_q
         
         actions =action_transform(actions, self.n_actions, self.device)
-        q_values = self.Rep_Actor(states, actions).gather(-1, index=rep_idx)
-
-        q_loss = self.loss_func(q_values, target_Q)
         
-        self.Rep_Actor_optimizer.zero_grad()
-        q_loss.backward()
-        self.Rep_Actor_optimizer.step()
+        # Update Max Rep Actor
+        max_q_values = self.max_Rep_Actor(states, actions).gather(-1, index=rep_idx)
+        max_q_loss = self.loss_fn(max_q_values, target_max_Q)
+        self.max_Rep_Actor_optimizer.zero_grad()
+        max_q_loss.backward()
+        self.max_Rep_Actor_optimizer.step()
+        
+        # Update Mean Rep Actor
+        mean_q_values = self.mean_Rep_Actor(states, actions).gather(-1, index=rep_idx)
+        mean_q_loss = self.loss_fn(mean_q_values, target_mean_Q)
+        self.mean_Rep_Actor_optimizer.zero_grad()
+        mean_q_loss.backward()
+        self.mean_Rep_Actor_optimizer.step()
+
+        if self.use_hard_update:
+            if training_steps % self.update_interval == 0:
+                self.target_max_Rep_Actor.load_state_dict(self.max_Rep_Actor.state_dict())
+                self.target_mean_Rep_Actor.load_state_dict(self.mean_Rep_Actor.state_dict())
+        else:
+            for target_param, param in zip(self.target_max_Rep_Actor.parameters(), self.max_Rep_Actor.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
+            for target_param, param in zip(self.target_mean_Rep_Actor.parameters(), self.mean_Rep_Actor.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
 
         log_dict.update({
-            "rep_q_loss": q_loss.clone().cpu().item(),
-            "rep_td_error": (q_values.mean(dim = 0) - target_Q).mean().clone().cpu().item(),
+            "rep_mean_q_loss": mean_q_loss.clone().cpu().item(),
+            "rep_max_q_loss": max_q_loss.clone().cpu().item(),
+            "rep_max_td_error": (max_q_values - target_max_Q).mean().clone().cpu().item(),
+            "rep_mean_td_error": (mean_q_values - target_mean_Q).mean().clone().cpu().item(),
         })
         return log_dict
-    
-    def save_model(self, path: str):
-        torch.save(self.Rep_Actor.state_dict(), path + "rep_actor.pth")
-        self.base_agent.save_model(path)

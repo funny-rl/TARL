@@ -42,13 +42,13 @@ use_step_rate=true
 hidden_dim=64
 lr=0.001
 use_lr_decay=true
-alpha=0.01
+alpha=0.005
 
 fixed_coeff=false
 n_sample=1
-sigma_decay=true
+sigma_decay=false
 use_adaptive_uncertainty=true
-use_act_skip_buf=true
+use_act_skip_buf=false
 
 EXTRA_ARGS=()
 

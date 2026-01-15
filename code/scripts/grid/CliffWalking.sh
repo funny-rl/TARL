@@ -42,9 +42,9 @@ alpha=0.01
 uncertainty_factor=-1.5
 hidden_dim=64
 
-fixed_coeff=false
+fixed_coeff=true
 use_act_skip_buf=false
-prev_buffer_save=false
+prev_buffer_save=true
 
 EXTRA_ARGS=()
 

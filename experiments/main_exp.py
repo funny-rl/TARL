@@ -12,9 +12,12 @@ def preprocess(env_name, algo_name) -> dict:
     """
     Each data: csv files with columns: step, seeds (10 seeds)
     """
-    
-    data_folder = os.path.join(f"./data/main_exp/{env_name}/{algo_name}.csv")
-    df = pd.read_csv(data_folder)
+    try:
+        data_folder = os.path.join(f"./data/main_exp/{env_name}/{algo_name}.csv")
+        df = pd.read_csv(data_folder)
+    except:
+        print(f"Data for {env_name} with {algo_name} not found!")
+        return None
     
     # remove the __MAX, __MIN columns
     df = df[[col for col in df.columns if "__MAX" not in col and "__MIN" not in col]] 
@@ -59,6 +62,7 @@ def main():
     else:
         envs = [
             "pendulum", 
+            "fetchreachdense"
         ]
         algos = [
             "DDPG", 
@@ -70,8 +74,12 @@ def main():
             "EQL_sample1",
             "EQL_sample5",
             "EQL_sample10",
-            "EQL_sample15",
-            "EQL_sample20"
+            "EQL_sample20",
+            "EQL_skip",
+            "EQL_fix",
+            "EQL_skip_fix",
+            "EQL_sample5_root",
+            "EQL_sample10_root",
         ]
     
     print("=" * 100)
@@ -82,7 +90,8 @@ def main():
         algo_scores = {}
         for algo in algos:
             np_scores = preprocess(env, algo)
-            algo_scores[algo] = np_scores
+            if np_scores is not None:
+                algo_scores[algo] = np_scores
 
         aggregate_func = lambda x: np.array([metrics.aggregate_iqm(x)])
         iqm_scores, iqm_cis = rly.get_interval_estimates(
