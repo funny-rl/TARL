@@ -38,13 +38,13 @@ e_decay=$((total_training_steps * 9 / 10))
 
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
-alpha=0.01
+alpha=0.1
 uncertainty_factor=-1.5
 hidden_dim=64
 
-fixed_coeff=false
+fixed_coeff=true
 use_act_skip_buf=false
-prev_buffer_save=true
+prev_buffer_save=false
 
 EXTRA_ARGS=()
 
@@ -78,7 +78,7 @@ if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs.env_name=$ENV_NAME")
 fi
 
-for SEED in 10 11 12 13 14 15 16;
+for SEED in 17 18 19;
 do
     ARGS=(
         "use_wandb=$USE_WANDB"

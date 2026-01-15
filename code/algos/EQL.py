@@ -115,6 +115,7 @@ class EQL:
                 self.epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * torch.exp(-1.0 * training_steps / self.e_decay).item()
             else:
                 raise NotImplementedError(f"Epsilon greedy type {self.e_greedy_type} is not supported.")
+        self.alpha_update()
 
     def lr_decay(self, training_rate):
         self.base_agent.lr_decay(training_rate)
@@ -145,7 +146,8 @@ class EQL:
                 mean_rep_q = self.mean_Rep_Actor(state, action)
                 
                 if deterministic:
-                    rep_Qs = (1.0 - self.min_alpha) * max_rep_q + self.min_alpha * mean_rep_q
+                    # rep_Qs = (1.0 - self.min_alpha) * max_rep_q + self.min_alpha * mean_rep_q
+                    rep_Qs = (1.0 - self.alpha) * max_rep_q + self.alpha * mean_rep_q
                     repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
                     return repetitions, rep_Qs
                 else:
@@ -183,7 +185,7 @@ class EQL:
             
     def alpha_update(self):
         if not self.fixed_coeff:
-            self.alpha = max(self.epsilon / 5, self.min_alpha)
+            self.alpha = max(self.epsilon, self.min_alpha)
         else:
             self.alpha = self.min_alpha
     
@@ -215,7 +217,6 @@ class EQL:
                     mean_q[:, idx] = next_rep_mean_q
                 
                 mean_q  = mean_q.mean(dim=-1, keepdim=True)
-                
             else:
                 next_actions = self.base_agent.target_Actor(next_states)
                 # max_q = self.target_max_Rep_Actor(next_states, next_actions).max(dim=-1, keepdim=True)[0]

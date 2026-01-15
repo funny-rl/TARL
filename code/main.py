@@ -46,6 +46,7 @@ def main(args):
     video_save_dir: str = args.video_save_dir
     model_name: str = model_args.model_name if model_args is not None else None
     device: str = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    group_name = args.group_name
     
     seed: int = args.seed
     training_steps: int = 0
@@ -116,12 +117,12 @@ def main(args):
         assert hasattr(rep_agent, "ucb"), "Adaptive repetition lambda requires UCB Algorithms."
     
     if use_wandb:
-        unique_id = unique_id = f"{algo_name}_{model_name}_{args.group_name}_{env_name}_{seed}_{time.time()}"
+        unique_id = unique_id = f"{algo_name}_{model_name}_{group_name}_{env_name}_{seed}_{time.time()}"
         wandb.init(
             project=env_name, 
             id=unique_id,
             name=f"{algo_name}_{model_name}_{env_name}_{seed}",
-            group=args.group_name,
+            group=group_name,
             config=OmegaConf.to_container(args, resolve=True),
         )
     
@@ -136,6 +137,7 @@ def main(args):
                 
             while not done:
                 train = training_steps >= warmup_steps
+                
                 if train:
                     if model_name == "TAAC":
                         action, beta = rep_agent.select_action(state, prev_action)
@@ -152,6 +154,7 @@ def main(args):
                 else:
                     if model_name == "TAAC":
                         beta = 1.0
+
                     action = env.action_space.sample()
                     repetition = rep_agent.select_repetition(state)
 
@@ -266,21 +269,20 @@ def main(args):
                         )
                         rep_agent.lr_decay(training_rate)
 
-                    if hasattr(rep_agent, "alpha"):
-                        rep_agent.alpha_update()
-
                     if done:
                         num_episodes += 1
                         state, _ = env.reset()
                         log["lr"] = rep_agent.lr
-                        
-                        if hasattr(rep_agent, "alpha"):
-                            log["alpha"] = rep_agent.alpha
-                        
-                        msg = f"Training steps: {training_steps} | Episode: {num_episodes} | Rewards: {log['episode_reward']} | LR: {rep_agent.lr} | {env_name} | Algo: {algo_name} | Model: {model_name}"
+
+                        msg = f"Training steps: {training_steps} | Episode: {num_episodes} | Rewards: {log['episode_reward']} | LR: {rep_agent.lr} | {env_name} | Algo: {algo_name} | Model: {model_name} | Group: {group_name}"
                         if hasattr(rep_agent, "epsilon"):
                             log["epsilon"] = rep_agent.epsilon
                             msg += f"| Epsilon: {rep_agent.epsilon}"
+
+                        if hasattr(rep_agent, "alpha"):
+                            log["alpha"] = rep_agent.alpha
+                            msg += f"| Alpha: {rep_agent.alpha}"
+
                         print(msg)
                         if use_wandb:
                             _log = {}

@@ -62,7 +62,7 @@ def main():
     else:
         envs = [
             "pendulum", 
-            "fetchreachdense"
+            # "fetchreachdense"
         ]
         algos = [
             "DDPG", 
@@ -75,6 +75,7 @@ def main():
             "EQL_sample5",
             "EQL_sample10",
             "EQL_sample20",
+            "EQL",
             "EQL_skip",
             "EQL_fix",
             "EQL_skip_fix",

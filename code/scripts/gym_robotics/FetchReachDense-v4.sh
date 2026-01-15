@@ -40,15 +40,15 @@ video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
 use_step_rate=true
 hidden_dim=128
-lr=0.002
+lr=0.001
 use_lr_decay=true
 
-alpha=0.01
+alpha=0.1
+n_sample=10
 fixed_coeff=false
-n_sample=20
-
-use_adaptive_uncertainty=true
 use_act_skip_buf=false
+use_adaptive_uncertainty=true
+
 
 EXTRA_ARGS=()
 
@@ -80,7 +80,7 @@ if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs.env_name=$ENV_NAME")
 fi
 
-for SEED in 0 1 2 3 4 5 6 7 8 9;
+for SEED in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19;
 do
     ARGS=(
         "use_wandb=$USE_WANDB"

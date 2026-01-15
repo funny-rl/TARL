@@ -42,11 +42,10 @@ use_step_rate=true
 hidden_dim=64
 lr=0.001
 use_lr_decay=true
-alpha=0.005
+alpha=0.1
 
 fixed_coeff=false
-n_sample=1
-sigma_decay=false
+n_sample=10
 use_adaptive_uncertainty=true
 use_act_skip_buf=false
 
@@ -70,7 +69,6 @@ fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
     EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
-    EXTRA_ARGS+=("algos.models.continuous.sigma_decay=$sigma_decay")
     EXTRA_ARGS+=("algos.models.continuous.n_sample=$n_sample")
 fi
 if [ "$MODEL" == "UTE" ]; then
