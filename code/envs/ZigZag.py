@@ -7,23 +7,31 @@ class ZigZag(FallEnv):
             [1,2],
             [2,2],
             [3,2],
+            [4,2],
+            [5,2],
+            
             [0,3],
             [1,3],
             [2,3],
             [3,3],
-
-            [2,6],
+            [4,3],
+            [5,3],
+            
             [3,6],
             [4,6],
             [5,6],
-            [2,7],
+            [6,6],
+            [7,6],
+            
             [3,7],
             [4,7],
             [5,7],
+            [6,7],
+            [7,7],
         ]
-        shape: list[int] = [6, 10]
+        shape: list[int] = [8, 10]
         start: list[int] = [0, 0]
-        goal: list[int] = [5, 9]
+        goal: list[int] = [7, 9]
 
         super(ZigZag, self).__init__(
             pits=pits,

@@ -6,7 +6,7 @@ import torch.optim as optim
 from utils.utils import action_transform
 
 from .buffer.repetition_buffer import SkipBuffer
-from ._modules import Rep_DQN
+from ._modules import Duel_Rep_DQN
 
 from torch.func import stack_module_state, functional_call
 import copy
@@ -28,7 +28,8 @@ class EQL:
         sigma_decay,
         n_sample,
         use_act_skip_buf,
-        prev_buffer_save
+        prev_buffer_save,
+        low_variance
     ):
         self.base_agent = base_agent
         self.state_dim: int = base_agent.state_dim
@@ -68,15 +69,16 @@ class EQL:
         self.fixed_coeff: bool = fixed_coeff
         self.use_act_skip_buf: bool = use_act_skip_buf
         self.sigma_decay: bool = sigma_decay
+        self.low_variance: bool = low_variance
         
 
         self.alpha = alpha if self.fixed_coeff else max_epsilon
-        self.min_alpha: float = alpha
+        self.max_alpha: float = alpha
         
         self.e_greedy_type: str = e_greedy_type
         self.device: str = base_agent.device
 
-        self.max_Rep_Actor = Rep_DQN(
+        self.Rep_Actor = Duel_Rep_DQN(
             self.state_dim,
             self.action_dim,
             self.hidden_dim,
@@ -85,14 +87,10 @@ class EQL:
             self.n_actions
         ).to(self.device)
         
-        self.mean_Rep_Actor = deepcopy(self.max_Rep_Actor)
-        
-        self.target_max_Rep_Actor = deepcopy(self.max_Rep_Actor)
-        self.target_mean_Rep_Actor = deepcopy(self.mean_Rep_Actor)
+        self.target_Rep_Actor = deepcopy(self.Rep_Actor)
         
         self.loss_fn = nn.SmoothL1Loss()
-        self.max_Rep_Actor_optimizer = optim.Adam(self.max_Rep_Actor.parameters(), lr=self.lr)
-        self.mean_Rep_Actor_optimizer = optim.Adam(self.mean_Rep_Actor.parameters(), lr=self.lr)
+        self.Rep_Actor_optimizer = optim.Adam(self.Rep_Actor.parameters(), lr=self.lr)
         
         self.rep_replay_buffer = SkipBuffer(
             buffer_size=self.rep_buffer_size,
@@ -103,6 +101,11 @@ class EQL:
             device=self.device
         )
         
+        self.base_num_parameters = sum(p.numel() for p in self.base_agent.Actor.parameters() if p.requires_grad)
+        print(f"[{self.base_agent.__class__.__name__}] Number of parameters: {self.base_num_parameters}")
+        self.num_parameters = sum(p.numel() for p in self.Rep_Actor.parameters() if p.requires_grad)
+        print(f"[{self.__class__.__name__}] Number of parameters: {self.num_parameters}")
+
     def epsilon_decay(self, training_steps):
         if hasattr(self.base_agent, "epsilon_decay"):
             self.base_agent.epsilon_decay(training_steps)
@@ -121,9 +124,7 @@ class EQL:
         self.base_agent.lr_decay(training_rate)
         self.lr = self.base_agent.lr
         
-        for param_group in self.max_Rep_Actor_optimizer.param_groups:
-            param_group['lr'] = self.lr
-        for param_group in self.mean_Rep_Actor_optimizer.param_groups:
+        for param_group in self.Rep_Actor_optimizer.param_groups:
             param_group['lr'] = self.lr
             
     def select_action(
@@ -141,18 +142,13 @@ class EQL:
     ):
         if (deterministic or torch.rand(1).item() > self.epsilon) and action is not None:
             with torch.no_grad():
-                
-                max_rep_q = self.max_Rep_Actor(state, action)
-                mean_rep_q = self.mean_Rep_Actor(state, action)
-                
+                max_rep_q, neg_offset = self.Rep_Actor(state, action)
+                mean_rep_q = max_rep_q + neg_offset
+                rep_Qs = (1.0 - self.alpha) * max_rep_q + self.alpha * mean_rep_q
+                repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
                 if deterministic:
-                    # rep_Qs = (1.0 - self.min_alpha) * max_rep_q + self.min_alpha * mean_rep_q
-                    rep_Qs = (1.0 - self.alpha) * max_rep_q + self.alpha * mean_rep_q
-                    repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
                     return repetitions, rep_Qs
                 else:
-                    rep_Qs = (1.0 - self.alpha) * max_rep_q + self.alpha * mean_rep_q
-                    repetitions = torch.argmax(rep_Qs, dim=-1).squeeze().item() + 1
                     return repetitions
 
         else:
@@ -185,9 +181,9 @@ class EQL:
             
     def alpha_update(self):
         if not self.fixed_coeff:
-            self.alpha = max(self.epsilon, self.min_alpha)
+             self.alpha = min(1 - self.epsilon, self.max_alpha)
         else:
-            self.alpha = self.min_alpha
+            self.alpha = self.max_alpha
     
     def update(self, training_steps: int) -> dict:
         log_dict = self.base_agent.update(training_steps)
@@ -204,67 +200,79 @@ class EQL:
         
         with torch.no_grad():
             if self.n_actions is not None:
-                next_actions = torch.argmax(self.base_agent.target_Actor(next_states), dim=-1, keepdim=True)
-                next_actions = action_transform(next_actions, self.n_actions, self.device)
-                max_q = self.target_max_Rep_Actor(next_states, next_actions).max(dim=-1, keepdim=True)[0]
-                
-                mean_q = torch.zeros(self.rep_batch_size, self.n_actions).to(self.device)
-                for idx in range(self.n_actions):
-                    #  batch x one_hot_action
-                    dummy_action = torch.zeros(self.rep_batch_size, self.n_actions).to(self.device)
-                    dummy_action[:, idx] = 1.0
-                    next_rep_mean_q = self.target_mean_Rep_Actor(next_states, dummy_action).mean(dim=-1, keepdim=False)
-                    mean_q[:, idx] = next_rep_mean_q
-                
-                mean_q  = mean_q.mean(dim=-1, keepdim=True)
-            else:
-                next_actions = self.base_agent.target_Actor(next_states)
-                # max_q = self.target_max_Rep_Actor(next_states, next_actions).max(dim=-1, keepdim=True)[0]
-                max_q = self.base_agent.target_Critic(
-                    torch.cat([next_states, next_actions], dim=-1)
-                )
-                
-                noises = (torch.randn(self.n_sample, self.rep_batch_size, self.action_dim) * self.sigma).to(self.device)
-                # mean_q = torch.zeros(self.rep_batch_size, self.n_sample).to(self.device)
-                mean_q = torch.zeros(self.rep_batch_size, self.n_sample).to(self.device)
-                for idx, noise in enumerate(noises):
-                    noisy_next_actions = (next_actions + noise).clamp(-self.max_action, self.max_action)
-                    # rep_q_values = self.target_mean_Rep_Actor(next_states, noisy_next_actions).mean(dim=-1, keepdim=False)
-                    rep_q_values = self.base_agent.target_Critic(
-                        torch.cat([next_states, noisy_next_actions], dim=-1)
-                    ).squeeze(-1)
-                    mean_q[:, idx] = rep_q_values
+                if self.low_variance:
+                    next_q_values = self.base_agent.target_Actor(next_states)
+                    max_q = next_q_values.max(dim=-1, keepdim=True)[0]
+                    mean_q = next_q_values.mean(dim=-1, keepdim=True)
+                else:
+                    next_actions = torch.argmax(self.base_agent.target_Actor(next_states), dim=-1, keepdim=True)
+                    next_actions = action_transform(next_actions, self.n_actions, self.device)
+                    max_q, _ = self.target_Rep_Actor(next_states, next_actions)
+                    max_q = max_q.max(dim=-1, keepdim=True)[0]
                     
-                mean_q = mean_q.mean(dim=-1, keepdim=True)
+                    mean_q = torch.zeros(self.rep_batch_size, self.n_actions).to(self.device)
+                    for idx in range(self.n_actions):
+                        #  batch x one_hot_action
+                        dummy_action = torch.zeros(self.rep_batch_size, self.n_actions).to(self.device)
+                        dummy_action[:, idx] = 1.0
+                        next_rep_max_q, next_neg_offset = self.target_Rep_Actor(next_states, dummy_action)
+                        mean_q[:, idx] = (next_rep_max_q + next_neg_offset).mean(dim=-1, keepdim=False)
+                    mean_q  = mean_q.mean(dim=-1, keepdim=True)
+            else:
+                if self.low_variance:
+                    next_actions = self.base_agent.target_Actor(next_states)
+                    max_q = self.base_agent.target_Critic(
+                        torch.cat([next_states, next_actions], dim=-1)
+                    )
+                    noises = (torch.randn(self.n_sample, self.rep_batch_size, self.action_dim) * self.sigma).to(self.device)
+                    mean_q = torch.zeros(self.rep_batch_size, self.n_sample).to(self.device)
+                    for idx, noise in enumerate(noises):
+                        noisy_next_actions = (next_actions + noise).clamp(-self.max_action, self.max_action)
+                        rep_q_values = self.base_agent.target_Critic(
+                            torch.cat([next_states, noisy_next_actions], dim=-1)
+                        ).squeeze(-1)
+                        mean_q[:, idx] = rep_q_values
+                    mean_q = mean_q.mean(dim=-1, keepdim=True)
+                else:
+                    next_actions = self.base_agent.target_Actor(next_states)
+                    max_q, _ = self.target_Rep_Actor(next_states, next_actions)
+                    max_q = max_q.max(dim=-1, keepdim=True)[0]
+                    noises = (torch.randn(self.n_sample, self.rep_batch_size, self.action_dim) * self.sigma).to(self.device)
+                    mean_q = torch.zeros(self.rep_batch_size, self.n_sample).to(self.device)
+                    for idx, noise in enumerate(noises):
+                        noisy_next_actions = (next_actions + noise).clamp(-self.max_action, self.max_action)
+                        rep_q_values, next_neg_offset = self.target_Rep_Actor(next_states, noisy_next_actions)
+                        mean_q[:, idx] = (rep_q_values + next_neg_offset).mean(dim=-1, keepdim=False)
+                    mean_q = mean_q.mean(dim=-1, keepdim=True)
 
             target_max_Q = rewards + not_dones * (self.gamma ** reps) * max_q
             target_mean_Q = rewards + not_dones * (self.gamma ** reps) * mean_q
         
         actions =action_transform(actions, self.n_actions, self.device)
         
-        # Update Max Rep Actor
-        max_q_values = self.max_Rep_Actor(states, actions).gather(-1, index=rep_idx)
-        max_q_loss = self.loss_fn(max_q_values, target_max_Q)
-        self.max_Rep_Actor_optimizer.zero_grad()
-        max_q_loss.backward()
-        self.max_Rep_Actor_optimizer.step()
-        
-        # Update Mean Rep Actor
-        mean_q_values = self.mean_Rep_Actor(states, actions).gather(-1, index=rep_idx)
-        mean_q_loss = self.loss_fn(mean_q_values, target_mean_Q)
-        self.mean_Rep_Actor_optimizer.zero_grad()
-        mean_q_loss.backward()
-        self.mean_Rep_Actor_optimizer.step()
+        max_q_pred_all, neg_offset_all = self.Rep_Actor(states, actions)
 
-        if self.use_hard_update:
-            if training_steps % self.update_interval == 0:
-                self.target_max_Rep_Actor.load_state_dict(self.max_Rep_Actor.state_dict())
-                self.target_mean_Rep_Actor.load_state_dict(self.mean_Rep_Actor.state_dict())
-        else:
-            for target_param, param in zip(self.target_max_Rep_Actor.parameters(), self.max_Rep_Actor.parameters()):
-                target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
-            for target_param, param in zip(self.target_mean_Rep_Actor.parameters(), self.mean_Rep_Actor.parameters()):
-                target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
+        max_q_values = max_q_pred_all.gather(-1, index=rep_idx)
+        neg_offset_val = neg_offset_all.gather(-1, index=rep_idx)
+
+        mean_q_values = max_q_values.detach() + neg_offset_val
+        
+        max_q_loss = self.loss_fn(max_q_values, target_max_Q)
+        mean_q_loss = self.loss_fn(mean_q_values, target_mean_Q)
+        
+        total_loss = max_q_loss + mean_q_loss
+        
+        self.Rep_Actor_optimizer.zero_grad()
+        total_loss.backward()
+        self.Rep_Actor_optimizer.step()
+
+        if not self.low_variance:
+            if self.use_hard_update:
+                if training_steps % self.update_interval == 0:
+                    self.target_Rep_Actor.load_state_dict(self.Rep_Actor.state_dict())
+            else:
+                for target_param, param in zip(self.target_Rep_Actor.parameters(), self.Rep_Actor.parameters()):
+                    target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
 
         log_dict.update({
             "rep_mean_q_loss": mean_q_loss.clone().cpu().item(),

@@ -80,6 +80,11 @@ class TempoRL:
             prev_buffer_save=prev_buffer_save,
             device=self.device
         )
+        
+        self.base_num_parameters = sum(p.numel() for p in self.base_agent.Actor.parameters() if p.requires_grad)
+        print(f"[{self.base_agent.__class__.__name__}] Number of parameters: {self.base_num_parameters}")
+        self.rep_num_parameters = sum(p.numel() for p in self.Rep_Actor.parameters() if p.requires_grad)
+        print(f"[{self.__class__.__name__}] Number of parameters: {self.rep_num_parameters}")   
 
     def epsilon_decay(self, training_steps):
         if hasattr(self.base_agent, "epsilon_decay"):

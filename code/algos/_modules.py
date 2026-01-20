@@ -133,6 +133,50 @@ class Rep_DQN(nn.Module):
             x = torch.cat([state, actions], dim=-1)
             x = self.encoder(x)
         return x
+    
+class Duel_Rep_DQN(nn.Module):
+    def __init__(
+        self, 
+        state_dim,
+        action_dim,
+        hidden_dim,
+        max_repetition,
+        use_image,
+        n_actions = None
+    ):
+        super(Duel_Rep_DQN, self).__init__()
+        self.use_image = use_image
+        
+        if n_actions is not None:
+            action_dim = n_actions
+        
+        self.encoder = nn.Sequential(
+            nn.Linear(state_dim + action_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+        )
+        
+        self.max_q_decoder = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, max_repetition)
+        )
+        
+        self.neg_offset_decoder = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, max_repetition), nn.Softplus()
+        )
+        
+    def forward(self, state, actions):
+        x = torch.cat([state, actions], dim=-1)
+        x = self.encoder(x)
+        max_q = self.max_q_decoder(x)
+        neg_offset = -self.neg_offset_decoder(x)
+        return max_q, neg_offset
+
 
 class Ensemble_DQN(nn.Module):
     def __init__(

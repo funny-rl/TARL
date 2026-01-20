@@ -43,12 +43,12 @@ hidden_dim=128
 lr=0.001
 use_lr_decay=true
 
-alpha=0.1
-n_sample=10
+alpha=0.2
+n_sample=20
+low_variance=true
 fixed_coeff=false
 use_act_skip_buf=false
 use_adaptive_uncertainty=true
-
 
 EXTRA_ARGS=()
 
@@ -71,6 +71,7 @@ if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
     EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
     EXTRA_ARGS+=("algos.models.continuous.n_sample=$n_sample")
+    EXTRA_ARGS+=("algos.models.low_variance=$low_variance")
 fi
 if [ "$MODEL" == "UTE" ]; then
     EXTRA_ARGS+=("algos.models.use_adaptive_uncertainty=$use_adaptive_uncertainty")
@@ -80,7 +81,7 @@ if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs.env_name=$ENV_NAME")
 fi
 
-for SEED in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19;
+for SEED in 2;
 do
     ARGS=(
         "use_wandb=$USE_WANDB"
@@ -102,4 +103,3 @@ do
     )
     python main.py "${ARGS[@]}"
 done
-

@@ -11,9 +11,9 @@ max_score_dict = {
     "cliff" : -13.0,
     "bridge" : -13.0,
     "zigzag" : -20.0,
-    "pendulum" : -150.642,
-    "fetchreachdense" : -1.115,
-    "pointmaze" : 105.726
+    "pendulum" : -158.125,
+    "fetchreachdense" : -1.122,
+    "pointmaze" : 141.469
 }
 
 decision_dict = {

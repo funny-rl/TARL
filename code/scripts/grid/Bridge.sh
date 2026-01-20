@@ -25,7 +25,7 @@ fi
 
 ENVS=grid
 ENV_NAME=Bridge
-max_repetition=9
+max_repetition=10
 total_training_steps=30000
 use_lr_decay=true
 
@@ -33,7 +33,7 @@ buffer_size=$total_training_steps
 rep_buffer_size=$((total_training_steps*max_repetition))
 
 eval_interval=$((total_training_steps / 100))
-eval_log_interval=$((total_training_steps / 4))
+eval_log_interval=$((total_training_steps / 100))
 e_decay=$((total_training_steps * 9 / 10))
 
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
@@ -42,9 +42,10 @@ alpha=0.1
 uncertainty_factor=-1.5
 hidden_dim=64
 
-fixed_coeff=true
+fixed_coeff=false
 use_act_skip_buf=false
 prev_buffer_save=false
+low_variance=true
 
 EXTRA_ARGS=()
 
@@ -68,6 +69,7 @@ fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
     EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
+    EXTRA_ARGS+=("algos.models.low_variance=$low_variance")
 fi
 
 if [ "$MODEL" == "UTE" ]; then
@@ -78,7 +80,7 @@ if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs.env_name=$ENV_NAME")
 fi
 
-for SEED in 17 18 19;
+for SEED in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19;
 do
     ARGS=(
         "use_wandb=$USE_WANDB"

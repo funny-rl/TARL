@@ -42,12 +42,13 @@ use_step_rate=true
 hidden_dim=64
 lr=0.001
 use_lr_decay=true
-alpha=0.1
+alpha=1.0
 
 fixed_coeff=false
-n_sample=10
+n_sample=20
 use_adaptive_uncertainty=true
 use_act_skip_buf=false
+low_variance=true
 
 EXTRA_ARGS=()
 
@@ -70,6 +71,7 @@ if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
     EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
     EXTRA_ARGS+=("algos.models.continuous.n_sample=$n_sample")
+    EXTRA_ARGS+=("algos.models.low_variance=$low_variance")
 fi
 if [ "$MODEL" == "UTE" ]; then
     EXTRA_ARGS+=("algos.models.use_adaptive_uncertainty=$use_adaptive_uncertainty")
@@ -101,4 +103,3 @@ do
     )
     python main.py "${ARGS[@]}"
 done
-

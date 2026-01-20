@@ -127,6 +127,7 @@ def set_hyperparam(
                 "n_sample": model_args.continuous.n_sample,
                 "use_act_skip_buf": use_act_skip_buf,
                 "prev_buffer_save": prev_buffer_save,
+                "low_variance": model_args.low_variance,
             }
         elif model_name == "TAAC":
             model_config = {

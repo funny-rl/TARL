@@ -3,7 +3,8 @@ model_name: EQL
 max_repetition: 10
 alpha: 0.1
 fixed_coeff: false
+low_variance: true
 continuous: # only for continuous action space
   sigma: 0.1
   sigma_decay: true
-  n_sample: 10 
+  n_sample: 10

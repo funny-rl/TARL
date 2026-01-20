@@ -7,3 +7,5 @@ code/outputs/*
 code/wandb/*
 code/videos/*
 code/models/*
+./experiments/*
+!.gitignore

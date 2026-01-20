@@ -33,7 +33,7 @@ buffer_size=$total_training_steps
 rep_buffer_size=$((total_training_steps*max_repetition))
 
 eval_interval=$((total_training_steps / 100))
-eval_log_interval=$((total_training_steps / 4))
+log_eval_interval=$((total_training_steps / 100))
 e_decay=$((total_training_steps * 9 / 10))
 
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
@@ -42,15 +42,16 @@ alpha=0.1
 uncertainty_factor=-1.5
 hidden_dim=64
 
-fixed_coeff=true
-use_act_skip_buf=true
+fixed_coeff=false
+use_act_skip_buf=false
 prev_buffer_save=false
+low_variance=true
 
 EXTRA_ARGS=()
 
 if [ "$video_save_dir" != "null" ]; then
     EXTRA_ARGS+=("video_save_dir='${video_save_dir}'")
-    EXTRA_ARGS+=("log_eval_interval=$eval_log_interval")
+    EXTRA_ARGS+=("log_eval_interval=$log_eval_interval")
 fi
 if [ "$ALGO" != "null" ]; then
     EXTRA_ARGS+=("algos=$ALGO")
@@ -68,6 +69,7 @@ fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
     EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
+    EXTRA_ARGS+=("algos.models.low_variance=$low_variance")
 fi
 
 if [ "$MODEL" == "UTE" ]; then

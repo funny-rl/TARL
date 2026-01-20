@@ -42,12 +42,13 @@ use_step_rate=true
 hidden_dim=256
 lr=0.0001
 use_lr_decay=false
-alpha=0.1
-
-fixed_coeff=false
-n_sample=10
 use_adaptive_uncertainty=true
-use_act_skip_buf=true
+
+alpha=0.7
+n_sample=10
+fixed_coeff=false
+low_variance=true
+use_act_skip_buf=false
 
 EXTRA_ARGS=()
 
@@ -69,6 +70,7 @@ fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
     EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
+    EXTRA_ARGS+=("algos.models.low_variance=$low_variance")
     EXTRA_ARGS+=("algos.models.continuous.n_sample=$n_sample")
 fi
 if [ "$MODEL" == "UTE" ]; then
@@ -80,7 +82,7 @@ if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs.max_episode_steps=500")
 fi
 
-for SEED in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19;
+for SEED in 0 1 2 3 4 5 6 7 8 9;
 do
     ARGS=(                                                                                                                           
         "use_wandb=$USE_WANDB"
