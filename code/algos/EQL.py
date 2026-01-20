@@ -181,7 +181,7 @@ class EQL:
             
     def alpha_update(self):
         if not self.fixed_coeff:
-             self.alpha = min(1 - self.epsilon, self.max_alpha)
+             self.alpha = min((1 - self.epsilon)**0.5, self.max_alpha)
         else:
             self.alpha = self.max_alpha
     

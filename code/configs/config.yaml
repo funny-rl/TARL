@@ -16,6 +16,7 @@ warmup_steps: 1000 # in step units
 # render should set two flags: 
 video_save_dir: null # if null, videos are not saved
 log_eval_interval: 100000 # evaluation logging interval: render, action distribution, etc.
+display_eval_interval: 100000 # evaluation display interval: render to screen
 
 # model saving
 save_model: False

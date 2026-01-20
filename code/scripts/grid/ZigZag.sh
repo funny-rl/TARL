@@ -34,6 +34,7 @@ rep_buffer_size=$((total_training_steps*max_repetition))
 
 eval_interval=$((total_training_steps / 100))
 log_eval_interval=$((total_training_steps / 100))
+display_eval_interval=$((total_training_steps / 1))
 e_decay=$((total_training_steps * 9 / 10))
 
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
@@ -43,7 +44,7 @@ uncertainty_factor=-1.5
 hidden_dim=64
 
 fixed_coeff=false
-use_act_skip_buf=false
+use_act_skip_buf=true
 prev_buffer_save=false
 low_variance=true
 
@@ -52,6 +53,7 @@ EXTRA_ARGS=()
 if [ "$video_save_dir" != "null" ]; then
     EXTRA_ARGS+=("video_save_dir='${video_save_dir}'")
     EXTRA_ARGS+=("log_eval_interval=$log_eval_interval")
+    EXTRA_ARGS+=("display_eval_interval=$display_eval_interval")
 fi
 if [ "$ALGO" != "null" ]; then
     EXTRA_ARGS+=("algos=$ALGO")

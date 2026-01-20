@@ -58,7 +58,8 @@ def main(args):
     warmup_steps: int = args.warmup_steps
     total_training_steps: int = args.total_training_steps
     log_eval_interval: int = args.log_eval_interval
-
+    display_eval_interval: int = args.display_eval_interval
+    
     set_seed(seed)
     
     env = build_env(env_args)
@@ -237,6 +238,7 @@ def main(args):
                             use_eval_render = use_eval_render,
                             video_save_dir = video_save_dir,
                             log_eval_interval = log_eval_interval,
+                            display_eval_interval = display_eval_interval,
                             env_info = env_info,
                             device = device
                         )
@@ -326,12 +328,10 @@ def eval(
     use_eval_render,
     video_save_dir,
     log_eval_interval,
+    display_eval_interval,
     env_info,
     device
-):
-    best_frames = None
-    best_log = None
-    best_reward = float("-inf")  
+): 
 
     use_log_reward = env_info.get("use_log_reward", False)
     
@@ -347,7 +347,7 @@ def eval(
     total_eval_time: list[float] = []
     for ep in range(eval_episodes):
         done = False
-        # frames: list[Any] = []
+        frames: list[Any] = []
         episode_reward: float = 0.0
         num_decision: int = 0
         epi_repetition: list[int] = []
@@ -396,9 +396,9 @@ def eval(
                 reward = reward_transform(reward, use_log_reward)
                 done: bool = terminated or truncated
 
-                # if use_eval_render and (training_steps % log_eval_interval == 0):
-                #     frame = eval_env.render()
-                #     frames.append(frame)
+                if use_eval_render and (training_steps % display_eval_interval == 0):
+                    frame = eval_env.render()
+                    frames.append(frame)
                 
                 state = next_state
                 prev_action = action
@@ -415,32 +415,26 @@ def eval(
         print(f"[Evaluation] Episode: {ep+1} | Reward: {episode_reward} | Time: {end_time - start_time:.2f} seconds")
         
         total_eval_time.append(end_time - start_time)
-        
-        if (use_eval_render and (training_steps % log_eval_interval == 0)):
-            best_reward = episode_reward
-            # best_frames = frames.copy()
-            best_log = eval_log.copy()
         total_rewards.append(episode_reward)
         eval_repetition.append(np.mean(epi_repetition))
         eval_num_decision.append(num_decision)
         
     
+    save_dir = os.path.join(video_save_dir, str(training_steps))
     if use_eval_render and (training_steps % log_eval_interval == 0):
-        save_dir = os.path.join(video_save_dir, str(training_steps))
         os.makedirs(save_dir, exist_ok=True)
-
-        # video_path = f"{save_dir}/{test_seed}/test.mp4"
         log_path = f"{save_dir}/{test_seed}/eval_log.json"
-
-        # os.makedirs(os.path.dirname(video_path), exist_ok=True)
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
-
-        # imageio.mimsave(video_path, best_frames, fps=30)
-        # print(f"Saved evaluation video at {video_path}")
-        
         with open(log_path, 'w') as f:
-            json.dump(best_log, f, indent=4)
+            json.dump(eval_log, f, indent=4)
             print(f"Saved evaluation log at {log_path}")
+
+    
+    if use_eval_render and (training_steps % display_eval_interval == 0):
+        video_path = f"{save_dir}/{test_seed}/test.mp4"
+        os.makedirs(os.path.dirname(video_path), exist_ok=True)
+        imageio.mimsave(video_path, frames, fps=30)
+        print(f"Saved evaluation video at {video_path}")
 
     avg_reward: float = np.mean(total_rewards)
     avg_repetition: float = np.mean(eval_repetition)
