@@ -23,6 +23,7 @@ GRID = "grid"
 CLASSIC_CONTROL = "classic"
 ROBOTICS = "robotics"
 MUJOCO = "mujoco" 
+BOX2D = "box2d"
 
 def build_env(
     env_args: DictConfig,
@@ -35,10 +36,14 @@ def build_env(
     env_name: str = env_args.env_name
 
     if env_type == GRID:
-        env = ENVS_REGISTRY[env_name](
-            
+        env = ENVS_REGISTRY[env_name]()
+    elif env_type == BOX2D:
+        env = gym.make(
+            env_name,
+            continuous=True,
+            render_mode="rgb_array" if use_eval_render else None,
         )
-
+        
     elif env_type == ATARI:
         env = gym.make(
             env_name,

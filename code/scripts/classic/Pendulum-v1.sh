@@ -26,10 +26,10 @@ fi
 ENVS=classic
 ENV_NAME=Pendulum-v1
 max_repetition=10
-total_training_steps=30000
+total_training_steps=12000
 eval_episodes=5
 eval_interval=$((total_training_steps / 100))
-eval_log_interval=$((total_training_steps / 4))
+log_eval_interval=$((total_training_steps / 100))
 e_greedy_type=exponential
 e_decay=$((total_training_steps / 10))
 
@@ -42,19 +42,19 @@ use_step_rate=true
 hidden_dim=64
 lr=0.001
 use_lr_decay=true
-alpha=1.0
 
-fixed_coeff=false
+alpha=1.0
+coeff_scaling="reverse" # options: fix, epsilon, reverse
 n_sample=20
 use_adaptive_uncertainty=true
-use_act_skip_buf=false
+use_act_skip_buf=true
 low_variance=true
 
 EXTRA_ARGS=()
 
 if [ "$video_save_dir" != "null" ]; then
     EXTRA_ARGS+=("video_save_dir='${video_save_dir}'")
-    EXTRA_ARGS+=("log_eval_interval=$eval_log_interval")
+    EXTRA_ARGS+=("log_eval_interval=$log_eval_interval")
 fi
 if [ "$ALGO" != "null" ]; then
     EXTRA_ARGS+=("algos=$ALGO")
@@ -69,7 +69,7 @@ if [ "$MODEL" != "null" ]; then
 fi
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
-    EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
+    EXTRA_ARGS+=("algos.models.coeff_scaling=$coeff_scaling")
     EXTRA_ARGS+=("algos.models.continuous.n_sample=$n_sample")
     EXTRA_ARGS+=("algos.models.low_variance=$low_variance")
 fi

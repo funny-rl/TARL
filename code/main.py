@@ -54,7 +54,6 @@ def main(args):
     save_interval: int = args.save_interval 
     eval_interval: int = args.eval_interval
     eval_episodes: int = args.eval_episodes
-    eval_max_steps: int = args.eval_max_steps
     warmup_steps: int = args.warmup_steps
     total_training_steps: int = args.total_training_steps
     log_eval_interval: int = args.log_eval_interval
@@ -231,7 +230,6 @@ def main(args):
                             rep_agent = rep_agent,
                             seed = seed,
                             eval_episodes = eval_episodes,
-                            eval_max_steps = eval_max_steps,
                             use_step_rate = use_step_rate,
                             training_steps = training_steps,
                             use_wandb = use_wandb,
@@ -276,7 +274,7 @@ def main(args):
                         state, _ = env.reset()
                         log["lr"] = rep_agent.lr
 
-                        msg = f"Training steps: {training_steps} | Episode: {num_episodes} | Rewards: {log['episode_reward']} | LR: {rep_agent.lr} | {env_name} | Algo: {algo_name} | Model: {model_name} | Group: {group_name} | Seed: {seed}"
+                        msg = f"Training steps: {training_steps} | Episode: {num_episodes} | Rewards: {log['episode_reward']} | LR: {rep_agent.lr} | {env_name} | Algo: {algo_name} | Model: {model_name} | Group: {group_name} | Seed: {seed} "
                         if hasattr(rep_agent, "epsilon"):
                             log["epsilon"] = rep_agent.epsilon
                             msg += f"| Epsilon: {rep_agent.epsilon}"
@@ -321,7 +319,6 @@ def eval(
     rep_agent,
     seed,
     eval_episodes,
-    eval_max_steps,
     use_step_rate,
     training_steps,
     use_wandb,
@@ -332,7 +329,7 @@ def eval(
     env_info,
     device
 ): 
-
+    save_dir = os.path.join(video_save_dir, str(training_steps))
     use_log_reward = env_info.get("use_log_reward", False)
     
     print("\n\nStarting Evaluation...\n")
@@ -405,9 +402,13 @@ def eval(
                 
                 episode_reward += reward
                 if done:
-                    break
-                if eval_max_steps < eval_step:
-                    done = True
+                    if use_eval_render and (training_steps % log_eval_interval == 0):
+                        os.makedirs(save_dir, exist_ok=True)
+                        log_path = f"{save_dir}/{test_seed}/eval_log.json"
+                        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                        with open(log_path, 'w') as f:
+                            json.dump(eval_log, f, indent=4)
+                            print(f"Saved evaluation log at {log_path}")
                     break
 
         end_time = time.time()
@@ -418,17 +419,6 @@ def eval(
         total_rewards.append(episode_reward)
         eval_repetition.append(np.mean(epi_repetition))
         eval_num_decision.append(num_decision)
-        
-    
-    save_dir = os.path.join(video_save_dir, str(training_steps))
-    if use_eval_render and (training_steps % log_eval_interval == 0):
-        os.makedirs(save_dir, exist_ok=True)
-        log_path = f"{save_dir}/{test_seed}/eval_log.json"
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        with open(log_path, 'w') as f:
-            json.dump(eval_log, f, indent=4)
-            print(f"Saved evaluation log at {log_path}")
-
     
     if use_eval_render and (training_steps % display_eval_interval == 0):
         video_path = f"{save_dir}/{test_seed}/test.mp4"

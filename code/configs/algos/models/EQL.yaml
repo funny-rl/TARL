@@ -2,7 +2,7 @@ model_name: EQL
 
 max_repetition: 10
 alpha: 0.1
-fixed_coeff: false
+coeff_scaling: "fix"
 low_variance: true
 continuous: # only for continuous action space
   sigma: 0.1

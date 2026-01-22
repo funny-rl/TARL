@@ -25,8 +25,8 @@ fi
 
 ENVS=grid
 ENV_NAME=ZigZag
-max_repetition=5
-total_training_steps=30000
+max_repetition=4
+total_training_steps=20000
 use_lr_decay=true
 
 buffer_size=$total_training_steps
@@ -43,8 +43,8 @@ alpha=0.1
 uncertainty_factor=-1.5
 hidden_dim=64
 
-fixed_coeff=false
-use_act_skip_buf=true
+coeff_scaling="fix" # options: fix, epsilon, reverse
+use_act_skip_buf=false
 prev_buffer_save=false
 low_variance=true
 
@@ -63,6 +63,10 @@ if [ "$ALGO" == "Random" ]; then
     eval_episodes=1000
     EXTRA_ARGS+=("eval_episodes=$eval_episodes")
 fi
+if [ "$MODEL" == "null" ]; then
+    use_act_skip_buf=false
+fi
+
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
     EXTRA_ARGS+=("algos.models.max_repetition=$max_repetition")
@@ -70,7 +74,7 @@ fi
 
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
-    EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
+    EXTRA_ARGS+=("algos.models.coeff_scaling=$coeff_scaling")
     EXTRA_ARGS+=("algos.models.low_variance=$low_variance")
 fi
 

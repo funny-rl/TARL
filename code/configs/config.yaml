@@ -9,7 +9,6 @@ group_name: default
 total_training_steps: 3000000
 use_step_rate: false
 eval_interval: 2000 # in step units
-eval_max_steps: 100000 # per episode
 eval_episodes: 1
 warmup_steps: 1000 # in step units
 

@@ -112,6 +112,7 @@ def set_hyperparam(
                 "prev_buffer_save": prev_buffer_save,
             }
         elif model_name == "EQL":
+            assert model_args.coeff_scaling in ["fix", "epsilon", "reverse"], "Invalid coeff_scaling option."
             model_config = {
                 "rep_batch_size": rep_batch_size,
                 "rep_buffer_size": rep_buffer_size,
@@ -121,7 +122,7 @@ def set_hyperparam(
                 "max_epsilon": max_epsilon,
                 "min_epsilon": min_epsilon,
                 "alpha": model_args.alpha,
-                "fixed_coeff": model_args.fixed_coeff,
+                "coeff_scaling": model_args.coeff_scaling,
                 "sigma": model_args.continuous.sigma,
                 "sigma_decay": model_args.continuous.sigma_decay,
                 "n_sample": model_args.continuous.n_sample,

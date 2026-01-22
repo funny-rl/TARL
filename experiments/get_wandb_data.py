@@ -6,16 +6,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 def fetch_run_data(run):
-    """단일 Run에서 데이터를 가져오는 함수"""
     run_data = []
-    # 필요한 key만 골라서 가져오기
-    history = run.scan_history(keys=["_step", METRIC_NAME])
+    history = run.scan_history(keys=["_step", Project_DIR])
     for row in history:
-        if METRIC_NAME in row:
+        if Project_DIR in row:
             run_data.append({
                 "run_name": run.name,
                 "step": row["_step"],
-                METRIC_NAME: row[METRIC_NAME]
+                Project_DIR: row[Project_DIR]
             })
     return run_data
 
@@ -28,7 +26,6 @@ def main():
     print(f"Fetching data from {len(runs)} runs using {MAX_WORKERS} threads...")
     
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # executor.map의 결과를 리스트로 변환
         results = list(tqdm(executor.map(fetch_run_data, runs), total=len(runs), desc="Downloading"))
         
         for result in results:
@@ -40,28 +37,30 @@ def main():
         df_pivot = df.pivot_table(
             index='step', 
             columns='run_name', 
-            values=METRIC_NAME, 
-            aggfunc='mean'  # 같은 step에 값이 여러 개라면 평균값을 사용
+            values=Project_DIR, 
         )
                 
         df_pivot = df_pivot.sort_index()
+        
+        print(df_pivot.columns)
 
         import os
-        os.makedirs("wandb_data", exist_ok=True)
-        file_name = f"wandb_data/{PROJECT}_eval_reward_pivoted.csv"
+        dir = f"data/{PROJECT}/{METRIC_NAME}"
+        os.makedirs(dir, exist_ok=True)
+        file_name = f"{dir}/{PROJECT}.csv"
         
         df_pivot.to_csv(file_name)
         
         print(f"\n🚀 변환 성공! 데이터 형태: {df_pivot.shape}")
         print(f"파일 저장 완료: {file_name}")
         
-        # 샘플 출력
         print("\n--- 데이터 미리보기 ---")
         print(df_pivot.head())
 
 if __name__ == "__main__":
     ENTITY = "singfor7012"
-    PROJECT = "ZigZag"
-    METRIC_NAME = "eval/avg_reward"
+    PROJECT = "CliffWalking"
+    METRIC_NAME = "avg_reward"
+    Project_DIR = f"eval/{METRIC_NAME}"
     MAX_WORKERS = 8 
     main()

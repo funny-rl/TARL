@@ -144,25 +144,25 @@ def main():
                 algo_labels.append(algo)
         
         if env == "zigzag":
-            ax.set_xlim(0, 20000)
+            ax.set_xlim(0, 12500)
             ax.set_ylim(0.05, 1.05)
-            ax.set_xticks(np.arange(0, 20001, 5000))
+            ax.set_xticks(np.arange(0, 12501, 2500))
         
         elif env == "bridge":
-            ax.set_xlim(0, 20000)
+            ax.set_xlim(0, 12500)
             ax.set_ylim(0.05, 1.05)
-            ax.set_xticks(np.arange(0, 20001, 5000))
+            ax.set_xticks(np.arange(0, 12501, 2500))
             
         elif env == "cliff":
-            ax.set_xlim(0, 10000)
+            ax.set_xlim(0, 7500)
             ax.set_ylim(0.05, 1.05)
-            ax.set_xticks(np.arange(0, 10001, 5000))
+            ax.set_xticks(np.arange(0, 7501, 2500))
 
 
         elif env == "pendulum":
-            ax.set_xlim(0, 10000)
+            ax.set_xlim(0, 5500)
             ax.set_ylim(-0.01, 1.1)
-            ax.set_xticks(np.arange(0, 10001, 5000))
+            ax.set_xticks(np.arange(0, 5501, 1000))
         
         elif env == "fetchreachdense":
             ax.set_xlim(0, 50000)
@@ -170,9 +170,9 @@ def main():
             ax.set_xticks(np.arange(0, 50001, 10000))
             
         elif env == "pointmaze":
-            ax.set_xlim(0, 400000)
+            ax.set_xlim(0, 250000)
             ax.set_ylim(-0.01, 2.4)
-            ax.set_xticks(np.arange(0, 400001, 100000))
+            ax.set_xticks(np.arange(0, 250001, 50000))
 
         ax.tick_params(axis='both', labelsize=16) # 축 숫자 크기
         ax.set_title(env.upper(), fontsize=16, fontweight='bold', pad=12) # 환경 이름 크기
@@ -207,7 +207,7 @@ def main():
     plt.show()
 
 if __name__ == "__main__":
-    DISCRETE = False
+    DISCRETE = True
     if DISCRETE:
         fig_name = "discrete"
     else:

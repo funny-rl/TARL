@@ -25,8 +25,8 @@ fi
 
 ENVS=grid
 ENV_NAME=CliffWalking
-max_repetition=10
-total_training_steps=30000
+max_repetition=4
+total_training_steps=20000
 use_lr_decay=true
 
 
@@ -39,11 +39,11 @@ e_decay=$((total_training_steps * 9 / 10))
 
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
-alpha=0.1
+alpha=0.05
 uncertainty_factor=-1.5
 hidden_dim=64
 
-fixed_coeff=false
+coeff_scaling="reverse" # options: fix, epsilon, reverse
 use_act_skip_buf=false
 prev_buffer_save=false
 low_variance=true
@@ -54,6 +54,7 @@ if [ "$video_save_dir" != "null" ]; then
     EXTRA_ARGS+=("video_save_dir='${video_save_dir}'")
     EXTRA_ARGS+=("log_eval_interval=$log_eval_interval")
 fi
+
 if [ "$ALGO" != "null" ]; then
     EXTRA_ARGS+=("algos=$ALGO")
 fi
@@ -62,6 +63,11 @@ if [ "$ALGO" == "Random" ]; then
     eval_episodes=1000
     EXTRA_ARGS+=("eval_episodes=$eval_episodes")
 fi
+
+if [ "$MODEL" == "null" ]; then
+    use_act_skip_buf=false
+fi
+
 if [ "$MODEL" != "null" ]; then
     EXTRA_ARGS+=("algos/models=$MODEL")
     EXTRA_ARGS+=("algos.models.max_repetition=$max_repetition")
@@ -69,7 +75,7 @@ fi
 
 if [ "$MODEL" == "EQL" ]; then
     EXTRA_ARGS+=("algos.models.alpha=$alpha")
-    EXTRA_ARGS+=("algos.models.fixed_coeff=$fixed_coeff")
+    EXTRA_ARGS+=("algos.models.coeff_scaling=$coeff_scaling")
     EXTRA_ARGS+=("algos.models.low_variance=$low_variance")
 fi
 
