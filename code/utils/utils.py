@@ -58,6 +58,16 @@ def state_transform(
             state_tensor = state_tensor.unsqueeze(0)
     
     elif state_tensor.dim() == 3:
+        d1, d2, d3 = state_tensor.shape  
+        if d1 == d2:
+            # H, W, C -> C, H, W
+            state_tensor = state_tensor.permute(2, 0, 1)
+        elif d3 == d2:
+            # C, H, W
+            pass
+        else:
+            raise ValueError(f"Not supported state shape: {state_tensor.shape} for image input.")
+        
         if state_tensor.max() > 1.0 + 1e-6:
             state_tensor = state_tensor / 255.0
         state_tensor = state_tensor.unsqueeze(0)  #B, C, H, W

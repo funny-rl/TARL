@@ -115,6 +115,27 @@ def get_env_info(
             "n_actions": n_actions,
             "int_action": True,
         }
+    elif env_type == BOX2D:
+        env_info: dict[str, Any] = {}
+        is_continuous = isinstance(env.action_space, gym.spaces.Box)
+        state_dim: int = env.observation_space.shape # H, W, C
+        state_dim = (state_dim[2], state_dim[0], state_dim[1])  # C, H, W
+        if use_step_rate:
+            state_dim += 1  # add step rate dimension
+        
+        env_info["state_dim"] = state_dim
+        
+        if is_continuous:
+            action_dim: int = env.action_space.shape[0] 
+            n_actions: int = None
+            env_info["max_action"] = env.action_space.high[0]
+        else:
+            action_dim: int = 1
+            n_actions: int = env.action_space.n
+        
+        env_info["action_dim"] = action_dim
+        env_info["n_actions"] = n_actions
+
     elif env_type == CLASSIC_CONTROL:
         env_info: dict[str, Any] = {}
         is_continuous = isinstance(env.action_space, gym.spaces.Box)

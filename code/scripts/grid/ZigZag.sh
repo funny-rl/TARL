@@ -43,9 +43,9 @@ alpha=0.1
 uncertainty_factor=-1.5
 hidden_dim=64
 
-coeff_scaling="fix" # options: fix, epsilon, reverse
+coeff_scaling="reverse" # options: fix, epsilon, reverse
 use_act_skip_buf=false
-prev_buffer_save=false
+prev_buffer_save=true
 low_variance=true
 
 EXTRA_ARGS=()

@@ -38,14 +38,13 @@ display_eval_interval=$((total_training_steps / 1))
 e_decay=$((total_training_steps * 9 / 10))
 
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
-
-alpha=0.05
 uncertainty_factor=-1.5
 hidden_dim=64
 
+alpha=0.5
 coeff_scaling="reverse" # options: fix, epsilon, reverse
 use_act_skip_buf=false
-prev_buffer_save=false
+prev_buffer_save=true
 low_variance=true
 
 EXTRA_ARGS=()

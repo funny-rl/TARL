@@ -56,7 +56,6 @@ def set_hyperparam(
             "device": device
         }
     elif algo_name == "DDPG":
-        assert use_image == False, "DDPG does not support image input."
         base_config: dict[str, Any] = {
             "state_dim": env_info["state_dim"],
             "action_dim": env_info["action_dim"],

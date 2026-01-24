@@ -6,7 +6,7 @@ defaults:
 seed: 0
 use_wandb: false
 group_name: default
-total_training_steps: 3000000
+total_training_steps: 100000 # in step units
 use_step_rate: false
 eval_interval: 2000 # in step units
 eval_episodes: 1

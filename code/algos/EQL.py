@@ -228,34 +228,26 @@ class EQL:
             else:
                 if self.low_variance:
                     next_actions = self.base_agent.target_Actor(next_states)
-                    max_q = self.base_agent.target_Critic(
-                        torch.cat([next_states, next_actions], dim=-1)
-                    )
+                    max_q = self.base_agent.target_Critic(next_states, next_actions)
                     noises = (torch.randn(self.n_sample, self.rep_batch_size, self.action_dim) * self.sigma).to(self.device)
                     mean_q = torch.zeros(self.rep_batch_size, self.n_sample).to(self.device)
                     for idx, noise in enumerate(noises):
                         noisy_next_actions = (next_actions + noise).clamp(-self.max_action, self.max_action)
-                        rep_q_values = self.base_agent.target_Critic(
-                            torch.cat([next_states, noisy_next_actions], dim=-1)
-                        ).squeeze(-1)
+                        rep_q_values = self.base_agent.target_Critic(next_states, noisy_next_actions).squeeze(-1)
                         mean_q[:, idx] = rep_q_values
                     mean_q = mean_q.mean(dim=-1, keepdim=True)
                 else:
                     next_actions = self.base_agent.target_Actor(next_states)
                     # max_q = self.target_max_Rep_Actor(next_states, next_actions).max(dim=-1, keepdim=True)[0]
-                    max_q = self.base_agent.target_Critic(
-                        torch.cat([next_states, next_actions], dim=-1)
-                    )
-                    
+                    max_q = self.base_agent.target_Critic(next_states, next_actions)
+
                     noises = (torch.randn(self.n_sample, self.rep_batch_size, self.action_dim) * self.sigma).to(self.device)
                     # mean_q = torch.zeros(self.rep_batch_size, self.n_sample).to(self.device)
                     mean_q = torch.zeros(self.rep_batch_size, self.n_sample).to(self.device)
                     for idx, noise in enumerate(noises):
                         noisy_next_actions = (next_actions + noise).clamp(-self.max_action, self.max_action)
                         # rep_q_values = self.target_mean_Rep_Actor(next_states, noisy_next_actions).mean(dim=-1, keepdim=False)
-                        rep_q_values = self.base_agent.target_Critic(
-                            torch.cat([next_states, noisy_next_actions], dim=-1)
-                        ).squeeze(-1)
+                        rep_q_values = self.base_agent.target_Critic(next_states, noisy_next_actions).squeeze(-1)
                         mean_q[:, idx] = rep_q_values
                         
                     mean_q = mean_q.mean(dim=-1, keepdim=True)

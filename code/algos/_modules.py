@@ -7,16 +7,42 @@ class Continuous_Q_Actor(nn.Module):
         state_dim, 
         action_dim, 
         hidden_dim,
-        max_action
+        max_action,
+        use_image
     ):
         super(Continuous_Q_Actor, self).__init__()
         self.max_action = max_action
-        self.fc = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, action_dim), nn.Tanh()
-        )
+        self.use_image = use_image
+        if self.use_image:
+            C_dim = state_dim[0]
+            h_dim = state_dim[1]
+            w_dim = state_dim[2] 
+            
+            self.cnn = nn.Sequential(
+                nn.Conv2d(C_dim, 32, kernel_size=8, stride=4), nn.ReLU(),
+                nn.Conv2d(32, 64, kernel_size=4, stride=2), nn.ReLU(),
+                nn.Conv2d(64, 64, kernel_size=3, stride=1), nn.ReLU(),
+                nn.Flatten(),
+            )
+            
+            self.test_tensor = torch.zeros((1, C_dim, h_dim, w_dim))
+            with torch.no_grad():
+                cnn_output_dim = self.cnn(self.test_tensor).shape[-1]
+            
+            self.fc = nn.Sequential(
+                nn.Linear(cnn_output_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, action_dim), nn.Tanh()
+            )
+        else:
+            self.fc = nn.Sequential(
+                nn.Linear(state_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, action_dim), nn.Tanh()
+            )
     def forward(self, x):
+        if self.use_image:
+            x = self.cnn(x)
         return self.max_action * self.fc(x)
 
 class Continuous_Q_Critic(nn.Module):
@@ -25,15 +51,45 @@ class Continuous_Q_Critic(nn.Module):
         state_dim, 
         action_dim, 
         hidden_dim,
+        use_image
     ):
         super(Continuous_Q_Critic, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(state_dim + action_dim, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, 1)
-        )
+        self.use_image = use_image
+        if self.use_image:
+            C_dim = state_dim[0]
+            h_dim = state_dim[1]
+            w_dim = state_dim[2] 
+            
+            self.cnn = nn.Sequential(
+                nn.Conv2d(C_dim, 32, kernel_size=8, stride=4), nn.ReLU(),
+                nn.Conv2d(32, 64, kernel_size=4, stride=2), nn.ReLU(),
+                nn.Conv2d(64, 64, kernel_size=3, stride=1), nn.ReLU(),
+                nn.Flatten(),
+            )
+            
+            self.test_tensor = torch.zeros((1, C_dim, h_dim, w_dim))
+            with torch.no_grad():
+                cnn_output_dim = self.cnn(self.test_tensor).shape[-1]
+            
+            self.fc = nn.Sequential(
+                nn.Linear(cnn_output_dim + action_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, 1)
+            )
+        else:
+            self.fc = nn.Sequential(
+                nn.Linear(state_dim + action_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, 1)
+            )
 
-    def forward(self, x):
+    def forward(self, states, actions):
+        if self.use_image:
+            x = self.cnn(states)
+            x = torch.cat([x, actions], dim=-1)
+        else:
+            x = torch.cat([states, actions], dim=-1)
+            
         q_value = self.fc(x)
         return q_value
 

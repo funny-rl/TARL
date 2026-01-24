@@ -54,12 +54,14 @@ class DDPG:
             self.action_dim,
             self.hidden_dim,
             self.max_action,
+            self.use_image,
         ).to(self.device)
 
         self.Critic = Continuous_Q_Critic(
             self.state_dim,
             self.action_dim,
             self.hidden_dim,
+            self.use_image
         ).to(self.device)
 
         self.Actor_optimizer = torch.optim.Adam(
@@ -148,9 +150,7 @@ class DDPG:
             ) = self.replay_buffer.sample(self.batch_size)
             with torch.no_grad():
                 next_actions = self.target_Actor(next_states)
-                target_Q_values = self.target_Critic(
-                    torch.cat([next_states, next_actions], dim=-1)
-                )
+                target_Q_values = self.target_Critic(next_states, next_actions)
                 target_Q = rewards + (self.gamma ** reps) * not_dones * target_Q_values
         else:
             (
@@ -163,14 +163,10 @@ class DDPG:
 
             with torch.no_grad():
                 next_actions = self.target_Actor(next_states)
-                target_Q_values = self.target_Critic(
-                    torch.cat([next_states, next_actions], dim=-1)
-                )
+                target_Q_values = self.target_Critic(next_states, next_actions)
                 target_Q = rewards + self.gamma * not_dones * target_Q_values
         
-        current_Q = self.Critic(
-            torch.cat([states, actions], dim=-1)
-        )
+        current_Q = self.Critic(states, actions)
         critic_loss = self.loss_fn(current_Q, target_Q.detach())
 
         self.Critic_optimizer.zero_grad()
@@ -178,9 +174,7 @@ class DDPG:
         self.Critic_optimizer.step()
 
         curr_actions = self.Actor(states)
-        actor_loss = -self.Critic(
-            torch.cat([states, curr_actions], dim=-1)
-        ).mean()
+        actor_loss = -self.Critic(states, curr_actions).mean()
         
         self.Actor_optimizer.zero_grad()
         actor_loss.backward()

@@ -254,9 +254,7 @@ class UTE:
         with torch.no_grad():
             if self.is_continuous == True:
                 next_actions = self.base_agent.target_Actor(next_states)
-                next_q_values = self.base_agent.target_Critic(
-                    torch.cat([next_states, next_actions], dim=-1)
-                )
+                next_q_values = self.base_agent.target_Critic(next_states, next_actions)
             else:
                 next_actions = self.base_agent.target_Actor(next_states)
                 next_q_values = torch.max(next_actions, dim=-1, keepdim=True)[0]

@@ -18,7 +18,6 @@ class NaiveReplayBuffer():
         self.size: int = 0
         if isinstance(state_dim, int):
             state_dim = (state_dim,)
-            
         self.state_buffer = torch.zeros((buffer_size, *state_dim))
         self.action_buffer = torch.zeros((buffer_size, action_dim))
         self.reward_buffer = torch.zeros((buffer_size, 1))

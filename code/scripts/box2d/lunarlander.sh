@@ -25,9 +25,9 @@ fi
 
 ENVS=box2d
 ENV_NAME=LunarLander-v3
-max_repetition=10
-total_training_steps=12000
-eval_episodes=5
+max_repetition=5
+total_training_steps=100000
+eval_episodes=3
 eval_interval=$((total_training_steps / 100))
 log_eval_interval=$((total_training_steps / 100))
 e_greedy_type=exponential
@@ -39,13 +39,13 @@ rep_buffer_size=$((total_training_steps*max_repetition))
 video_save_dir=./videos/${ENV_NAME}/${ALGO}/${MODEL}/${GN}/
 
 use_step_rate=true
-hidden_dim=64
+hidden_dim=128
 lr=0.001
-use_lr_decay=true
+use_lr_decay=false
 
-alpha=1.0
-coeff_scaling="reverse" # options: fix, epsilon, reverse
-n_sample=20
+alpha=0.1
+coeff_scaling="epsilon" # options: fix, epsilon, reverse
+n_sample=1
 use_adaptive_uncertainty=true
 use_act_skip_buf=false
 low_variance=true
@@ -81,7 +81,7 @@ if [ "$ENVS" != "null" ]; then
     EXTRA_ARGS+=("envs.env_name=$ENV_NAME")
 fi
 
-for SEED in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19;
+for SEED in 18 19;
 do
     ARGS=(
         "use_wandb=$USE_WANDB"

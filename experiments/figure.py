@@ -1,4 +1,6 @@
 import os
+import json 
+from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,17 +10,19 @@ from matplotlib.ticker import FuncFormatter
 
 from rliable import metrics
 from scipy.stats import trim_mean
-from dicts import random_reward_dict, max_score_dict
+from utils.dicts import ENV_DICT
+from utils.repetition_dict import get_optimal_repetitions
+from utils.dicts import random_reward_dict, max_score_dict
 
 color_map = {
     "DDQN": "#F11FDC",
     "DDPG": "#F11FDC",
     "TempoRL": "#1f77b4",
-    "TempoRL_skip": "#1f77b4",
+    "TempoRL-M": "#1f77b4",
     "UTE": "#D83A16",
-    "UTE_skip": "#D83A16",
-    "EQL": "#0c0c0b",  
-    "EQL_skip": "#0c0c0b",
+    "UTE-M": "#D83A16",
+    "RARe(ours)": "#0c0c0b",
+    "RARe-M(ours)": "#0c0c0b",
     "TAAC": "#bcbd22",
 }
 
@@ -26,11 +30,11 @@ line_styles = {
     "DDQN": "-",
     "DDPG": "-",
     "TempoRL": "-",
-    "TempoRL_skip": "--",
     "UTE": "-",
-    "EQL": "-",
-    "UTE_skip": "--",
-    "EQL_skip": "--",
+    "RARe(ours)": "-",
+    "UTE-M": "--",
+    "TempoRL-M": "--",
+    "RARe-M(ours)": "--",
     "TAAC": "-",
     
 }
@@ -50,80 +54,118 @@ def smooth(values, window=5):
     
     return smoothed[:len(values)]
 
-def preprocess_for_curve(env_name, algo_name):
+
+def get_reward_data(env_name, csv_file):
+    df = pd.read_csv(csv_file)
+    final_scores = []
+    steps = df['step'].values
+    for col in df.columns:
+        if col != "step":
+            seed_values = df[col].values
+            normalized_values = (seed_values - random_reward_dict[env_name]) / (max_score_dict[env_name] - random_reward_dict[env_name])
+            final_scores.append(normalized_values)
+    return np.array(final_scores), steps
+    
+
+def get_repetition_data(env_name, data_path):
+    data = []
+    env_config = ENV_DICT[env_name]
+    rep_dict = get_optimal_repetitions(env_config["pits_list"], env_config["shape"], env_config["goal"], MAX_Repetition)
+    for step in range(0, 20001, 200):
+        tmp = []
+        for seed in range(20):
+            best_rep = 0
+            visited = 0
+            file_path = f"{data_path}/{step}/{seed}/eval_log.json"
+            prev_action, prev_rep = -1, -1
+            with open(file_path, "r") as f:
+                logs = json.load(f)
+                for log in logs:
+                    if "state" not in log:
+                        continue
+                    state_vec = log["state"][0]
+                    state_idx = int(np.argmax(state_vec))
+                    if state_idx in rep_dict:
+                        options = rep_dict[state_idx]
+                        visited += 1
+                        if log["action"][0] in options:
+                            if log["repetition"] in options[log["action"][0]]:
+                                best_rep += 1
+                                if log["action"][0] == prev_action and max(log["repetition"], prev_rep) != MAX_Repetition:
+                                    best_rep -= 1
+                            prev_action = log["action"][0]
+                            prev_rep = log["repetition"]
+                tmp.append(best_rep/visited)
+        # IQM score and CI for each step, over seeds
+        data.append(tmp)   
+    return np.array(data).T, np.arange(0, 20001, 200) # (Seeds, Steps), (Steps, )
+
+def preprocess_for_curve(env_name, algo_info, is_repetition_mode):
+    algo_key, algo_name = algo_info
     try:
-        data_path = f"./data/main_exp/{env_name}/{algo_name}.csv"
-        df = pd.read_csv(data_path)
-    except:
+        if is_repetition_mode:
+            data = {}
+            data_path = f"./data/{env_name}/DQN/{algo_key}/{algo_name}"
+            data, steps = get_repetition_data(env_name, data_path)
+            
+                    
+        else:
+            csv_file = f"./data/{env_name}/avg_reward/{algo_name}.csv"
+            data, steps = get_reward_data(env_name, csv_file)
+
+    except Exception as e:
+        print(f"Error occurred while processing {env_name} - {algo_name}: {e}")
         return None, None
     
-    reward_cols = [col for col in df.columns if col != "Step" and "__" not in col]
-    steps = df['Step'].values
-    raw_rewards = df[reward_cols].values # (Steps, Seeds)
-    
-    raw_rewards = np.clip(raw_rewards, random_reward_dict[env_name], None)
-    
-    # 정규화
-    rand_r = random_reward_dict[env_name]
-    max_r = max_score_dict[env_name]
-    normalized_rewards = (raw_rewards - rand_r) / (max_r - rand_r)
-    
-    # rliable 계산을 위해 (Seeds, Steps)로 변환
-    return normalized_rewards.T, steps
+    return data, steps
+
 
 def main():
     if DISCRETE:
-        envs = ["cliff", "bridge", "zigzag"]
-        algos = [
-            "DDQN",
-            "TempoRL",
-            "UTE",
-            "EQL",
-            "TempoRL_skip",
-            "UTE_skip",
-            "EQL_skip",
-        ]
+        from utils.dicts import D_MODEL_DICT as MODEL_DICT
+
     else:
-        envs = ["pendulum", "fetchreachdense", "pointmaze"] 
-        algos = [
-            "DDPG", 
-            "TempoRL",
-            "UTE", 
-            "TAAC", 
-            "EQL",
-            "UTE_skip",
-            "EQL_skip",
-            "TempoRL_skip",
-        ] 
-        
+        pass
+    envs = list(MODEL_DICT.keys())
+    num_envs = len(MODEL_DICT.keys())
     fig, axes = plt.subplots(
-        1, len(envs), 
-        figsize=(5*len(envs), 6), 
+        1, num_envs, 
+        figsize=(5*num_envs, 6), 
         sharex=False, 
         sharey=False
     )
-
+    
     all_lines = []
     algo_labels = []
     
-    for ax, env in zip(axes, envs):
+    for ax, env in zip(axes, MODEL_DICT.keys()):
+        algos = []
+        models = []
+        for algo_key, algo_list in MODEL_DICT[env].items():
+            for algo_dict in algo_list:
+                for model_name, algo_name in algo_dict.items():
+                    models.append(model_name)
+                    algos.append([algo_key, algo_name])
         
-        for algo in algos:
-            data, steps = preprocess_for_curve(env, algo)
-            if data is None: continue
-
+        assert len(algos) == len(models ), "Mismatch between algos and models lengths"
+                        
+        for algo, model in tqdm(zip(algos, models), desc=f"Processing {env}", total=len(models)):
+            prefix_name  = algo[1]
+            data, steps = preprocess_for_curve(env, algo, Repetition)
+            if data is None:
+                print(f"Data not found for {env} - {prefix_name}")
+                continue
             aggregate_func = lambda x: trim_mean(x, proportiontocut=0.25, axis=0)
             
-            # {algo: data} 형태로 전달
             scores, cis = rly.get_interval_estimates(
-                {algo: data}, 
+                {model: data}, 
                 aggregate_func, 
                 reps=2000
             )
-            
-            iqm_values = scores[algo]   
-            low_ci = cis[algo][0]
-            high_ci = cis[algo][1]    
+
+            iqm_values = scores[model]
+            low_ci = cis[model][0]
+            high_ci = cis[model][1]    
             
             iqm_values = smooth(iqm_values)
             low_ci = smooth(low_ci)
@@ -132,28 +174,29 @@ def main():
             line, = ax.plot(
                 steps, 
                 iqm_values, 
-                label=algo, 
+                label=model, 
                 linewidth=2.5,
-                color=color_map.get(algo),
-                linestyle=line_styles.get(algo)
+                color=color_map[model],
+                linestyle=line_styles[model],
             )
             ax.fill_between(steps, low_ci, high_ci, color=line.get_color(), alpha=0.15)
 
             if env == envs[-1]:
                 all_lines.append(line)
-                algo_labels.append(algo)
+                algo_labels.append(model)
         
-        if env == "zigzag":
-            ax.set_xlim(0, 12500)
-            ax.set_ylim(0.05, 1.05)
-            ax.set_xticks(np.arange(0, 12501, 2500))
-        
-        elif env == "bridge":
+        if env == "ZigZag":
             ax.set_xlim(0, 12500)
             ax.set_ylim(0.05, 1.05)
             ax.set_xticks(np.arange(0, 12501, 2500))
             
-        elif env == "cliff":
+        
+        elif env == "Bridge":
+            ax.set_xlim(0, 8000)
+            ax.set_ylim(0.05, 1.05)
+            ax.set_xticks(np.arange(0, 8001, 2000))
+            
+        elif env == "CliffWalking":
             ax.set_xlim(0, 7500)
             ax.set_ylim(0.05, 1.05)
             ax.set_xticks(np.arange(0, 7501, 2500))
@@ -174,8 +217,8 @@ def main():
             ax.set_ylim(-0.01, 2.4)
             ax.set_xticks(np.arange(0, 250001, 50000))
 
-        ax.tick_params(axis='both', labelsize=16) # 축 숫자 크기
-        ax.set_title(env.upper(), fontsize=16, fontweight='bold', pad=12) # 환경 이름 크기
+        ax.tick_params(axis='both', labelsize=16) 
+        ax.set_title(env.upper(), fontsize=16, fontweight='bold', pad=12) 
         ax.xaxis.set_major_formatter(FuncFormatter(format_x))
         ax.grid(True, linestyle='-', alpha=0.8)
 
@@ -196,20 +239,19 @@ def main():
             fontsize=16
         )
 
-    # 공통 축 라벨
     fig.supxlabel("Training Steps ($\\times 10^4$)", fontsize=16)
     fig.supylabel("IQM Normalized Score", fontsize=16)
 
-    fig.tight_layout(rect=[0, 0, 1, 0.92])  # legend 공간 확보
+    fig.tight_layout(rect=[0, 0, 1, 0.92]) 
 
     os.makedirs("./figures", exist_ok=True)
-    fig.savefig(f"./figures/{fig_name}_iqm_curve.pdf", bbox_inches='tight', dpi=300)
+    fig_name1 = "discrete" if DISCRETE else "continuous"
+    fig_name2 = "repetition" if Repetition else "reward"
+    fig.savefig(f"./figures/{fig_name1}_{fig_name2}_iqm_curve.pdf", bbox_inches='tight', dpi=300)
     plt.show()
 
 if __name__ == "__main__":
+    MAX_Repetition = 4
     DISCRETE = True
-    if DISCRETE:
-        fig_name = "discrete"
-    else:
-        fig_name = "continuous"
+    Repetition = False
     main()

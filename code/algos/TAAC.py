@@ -55,12 +55,14 @@ class TAAC:
             self.action_dim,
             self.hidden_dim,
             self.max_action,
+            self.use_image
         ).to(self.device)
 
         self.Critic = Continuous_Q_Critic(
             self.state_dim,
             self.action_dim,
             self.hidden_dim,
+            self.use_image
         ).to(self.device)
 
         self.Actor_optimizer = torch.optim.Adam(
@@ -124,8 +126,8 @@ class TAAC:
             if none_flag:
                 return new_action.flatten().cpu().numpy(), 1
              
-            q_stay = self.Critic(torch.cat([state_t, prev_action_t], dim=-1))
-            q_switch = self.Critic(torch.cat([state_t, new_action], dim=-1))
+            q_stay = self.Critic(state_t, prev_action_t)
+            q_switch = self.Critic(state_t, new_action)
             
             if deterministic:
                 beta = (q_stay < q_switch).float().item() # 0: stay, 1: switch
@@ -187,8 +189,8 @@ class TAAC:
             target_actor_input = torch.cat([next_states, next_prev_actions], dim=-1)
             next_actions = self.target_Actor(target_actor_input)
 
-            target_Q_stay = self.target_Critic(torch.cat([next_states, next_prev_actions], dim=-1))
-            target_Q_switch = self.target_Critic(torch.cat([next_states, next_actions], dim=-1))
+            target_Q_stay = self.target_Critic(next_states, next_prev_actions)
+            target_Q_switch = self.target_Critic(next_states, next_actions)
 
             target_Q_values = torch.max(target_Q_stay, target_Q_switch)
             target_beta = (target_Q_switch > target_Q_stay).float()
@@ -208,7 +210,7 @@ class TAAC:
                 next_return = current_val    
         
         # Critic update
-        current_Q = self.Critic(torch.cat([states, actions], dim=-1))
+        current_Q = self.Critic(states, actions)
         critic_loss = self.loss_fn(current_Q, target_Q.detach())
 
         self.Critic_optimizer.zero_grad()
@@ -217,10 +219,10 @@ class TAAC:
 
         # Actor update
         with torch.no_grad():
-            current_q_stay = self.Critic(torch.cat([states, prev_actions], dim=-1))
+            current_q_stay = self.Critic(states, prev_actions)
 
         new_actions = self.Actor(torch.cat([states, prev_actions], dim=-1))
-        current_q_switch = self.Critic(torch.cat([states, new_actions], dim=-1))
+        current_q_switch = self.Critic(states, new_actions)
 
         q_cat = torch.cat([current_q_stay, current_q_switch], dim=-1)
         beta_probs = F.softmax(q_cat/self.temperature, dim=-1) # [batch_size, seq_len, 2], beta_probs_shape: torch.Size([64, 10, 2])
